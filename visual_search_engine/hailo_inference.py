@@ -54,18 +54,16 @@ class HailoInference:
 
     # ---------------------------------------------------------------------
     def _process_image(
-        self, image_path: Path, config, output_buffer
+        self, image_path: Path, config, bindings
     ) -> Optional[np.ndarray]:
         """Run inference on a single image and return normalized embedding."""
         try:
             with Image.open(image_path) as img:
                 img = img.convert("RGB").resize(self.image_size, Image.LANCZOS)
-                input_buffer = np.asarray(img, dtype=np.uint8).copy()
+                input_buffer = np.array(img, dtype=np.uint8)
 
-            bindings = config.create_bindings()
             # Bind input/output buffers
             bindings.input().set_buffer(input_buffer)
-            bindings.output().set_buffer(output_buffer)
 
             # Run synchronous inference
             config.run([bindings], timeout=1000)
@@ -100,12 +98,17 @@ class HailoInference:
         with VDevice(params) as vdevice:
             infer_model = vdevice.create_infer_model(str(self.hef_path))
             with infer_model.configure() as config:
+                bindings = config.create_bindings()
+                output_buffer = np.empty(
+                    list(infer_model.output().shape), dtype=np.uint8
+                )
+                bindings.output().set_buffer(output_buffer)
 
                 output_buffer = np.empty(
                     list(infer_model.output().shape), dtype=np.uint8
                 )
 
-                return self._process_image(image_path, config, output_buffer)
+                return self._process_image(image_path, config, bindings)
 
     # ---------------------------------------------------------------------
     def process_dir(self, dir_path: Path, callback: Callable[[Path, np.ndarray], None]):
@@ -130,6 +133,7 @@ class HailoInference:
                 output_buffer = np.empty(
                     list(infer_model.output().shape), dtype=np.uint8
                 )
+                bindings.output().set_buffer(output_buffer)
 
                 all_files = []
                 for ext in ("*.jpg", "*.jpeg", "*.png"):
@@ -149,7 +153,7 @@ class HailoInference:
 
                 for i, image_path in enumerate(all_files):
                     start = time.perf_counter()
-                    vec_f32 = self._process_image(image_path, config, output_buffer)
+                    vec_f32 = self._process_image(image_path, config, bindings)
                     if vec_f32 is not None:
                         callback(image_path, vec_f32)
                         success_count += 1
