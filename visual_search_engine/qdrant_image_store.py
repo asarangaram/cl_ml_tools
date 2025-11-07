@@ -1,7 +1,9 @@
+from typing import Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import PointStruct, HnswConfigDiff
 from qdrant_client.models import VectorParams, Distance
 from loguru import logger
+import numpy as np
 from pathlib import Path
 import hashlib
 
@@ -41,7 +43,7 @@ class QdrantImageStore:
             existing_params = existing.config.params.vectors
             if (
                 existing_params.size != vector_params.size
-                or existing_params.distance != vector_params.distance
+                or existing_params.distance.value != vector_params.distance.value
             ):
                 logger.error("Collection config differs from expected parameters!")
                 logger.error(
@@ -53,56 +55,41 @@ class QdrantImageStore:
                 raise ValueError("Collection config mismatch.")
 
     # ---------------------------------------------------------------------
-    def _compute_id(self, rel_path: Path, base: Path | None = None) -> tuple[int, str]:
-        """
-        Compute a deterministic 63-bit integer ID and normalized path string.
-        """
-        if base:
-            normalized = (
-                rel_path.resolve().relative_to(base.resolve()).as_posix().lower()
-            )
-        else:
-            normalized = rel_path.resolve().as_posix().lower()
-
-        point_id = int(hashlib.sha1(normalized.encode()).hexdigest(), 16) % (2**63)
-        return point_id, normalized
-
-    # ---------------------------------------------------------------------
-    def add_vector(self, rel_path: Path, vec_f32, base: Path | None = None):
+    def add_vector(
+        self, point_id: int, vec_f32: np.ndarray, payload: Optional[dict] = None
+    ):
         """
         Add or update a single image vector to Qdrant.
         """
-        point_id, normalized = self._compute_id(rel_path, base)
 
         point = PointStruct(
             id=point_id,
             vector=vec_f32,
-            payload={"filename": normalized},
+            payload=payload,
         )
 
         self.client.upsert(collection_name=self.collection_name, points=[point])
-        logger.debug(f"Upserted: {normalized} (ID={point_id})")
+        logger.debug(f"Upserted: {point_id} ")
 
     # ---------------------------------------------------------------------
-    def get_vector(self, rel_path: Path, base: Path | None = None):
+    def get_vector(self, point_id: int):
         """
         Retrieve a point from Qdrant using the deterministic path-based ID.
         """
-        point_id, _ = self._compute_id(rel_path, base)
+
         return self.client.retrieve(
             collection_name=self.collection_name, ids=[point_id]
         )
 
     # ---------------------------------------------------------------------
-    def delete_vector(self, rel_path: Path, base: Path | None = None):
+    def delete_vector(self, point_id: int):
         """
         Delete a point based on its deterministic path ID.
         """
-        point_id, normalized = self._compute_id(rel_path, base)
         self.client.delete(
             collection_name=self.collection_name, points_selector={"points": [point_id]}
         )
-        logger.debug(f"Deleted: {normalized} (ID={point_id})")
+        logger.debug(f"Deleted: {point_id}")
 
     # ---------------------------------------------------------------------
     def search(self, query_vector, limit: int = 5, with_payload: bool = True):

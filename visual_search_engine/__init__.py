@@ -1,1 +1,2 @@
 from .visual_search_engine import VisualSearchEngine
+from .similarity_search_engine import SimilaritySearchEngine
