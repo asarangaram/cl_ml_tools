@@ -4,7 +4,7 @@ from pathlib import Path
 from PIL import Image
 import time
 from typing import Callable, Optional
-from loguru import logger
+from .logger import logger
 
 
 class HailoInference:
@@ -29,7 +29,7 @@ class HailoInference:
         self.max_images = max_images
 
         # --- Automatically detect image input size from HEF ---
-        logger.info(f"Auto-detecting input size from HEF: {self.hef_path}")
+        logger.debug(f"Auto-detecting input size from HEF: {self.hef_path}")
         params = VDevice.create_params()
         params.scheduling_algorithm = HailoSchedulingAlgorithm.ROUND_ROBIN
 
@@ -48,7 +48,7 @@ class HailoInference:
                 raise ValueError(f"Unexpected input shape: {shape}")
 
             image_size = (w, h)
-            logger.info(f"Model expects input image size: {image_size}")
+            logger.debug(f"Model expects input image size: {image_size}")
 
         self.image_size = image_size
 
@@ -60,7 +60,7 @@ class HailoInference:
         try:
             with Image.open(image_path) as img:
                 img = img.convert("RGB").resize(self.image_size, Image.LANCZOS)
-                input_buffer = np.asarray(img, dtype=np.uint8)
+                input_buffer = np.asarray(img, dtype=np.uint8).copy()
 
             bindings = config.create_bindings()
             # Bind input/output buffers
@@ -68,7 +68,7 @@ class HailoInference:
             bindings.output().set_buffer(output_buffer)
 
             # Run synchronous inference
-            config.run([bindings])
+            config.run([bindings], timeout=1000)
             vec = bindings.output().get_buffer()
 
             # Normalize vector
@@ -104,6 +104,7 @@ class HailoInference:
                 output_buffer = np.empty(
                     list(infer_model.output().shape), dtype=np.uint8
                 )
+
                 return self._process_image(image_path, config, output_buffer)
 
     # ---------------------------------------------------------------------
@@ -123,7 +124,7 @@ class HailoInference:
         params.scheduling_algorithm = HailoSchedulingAlgorithm.ROUND_ROBIN
 
         with VDevice(params) as vdevice:
-            infer_model = vdevice.create_infer_model(self.hef_path)
+            infer_model = vdevice.create_infer_model(str(self.hef_path))
             with infer_model.configure() as config:
                 bindings = config.create_bindings()
                 output_buffer = np.empty(

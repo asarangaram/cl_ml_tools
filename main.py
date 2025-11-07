@@ -10,7 +10,7 @@ engine = SimilaritySearchEngine(
 )
 start = time.perf_counter()
 
-engine.add_file(base_folder / "Datewise/12/27/2016/IMG_0582.jpg")
+engine.add_dir(base_folder / "Datewise")
 
 end = time.perf_counter()
 print(f"✅ Completed indexing in {end - start:.2f} seconds")

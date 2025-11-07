@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Optional, List, Union
 import numpy as np
-from loguru import logger
+from .logger import logger
 import hashlib
 
 from .hailo_inference import HailoInference
@@ -88,7 +88,7 @@ class VisualSearchEngine:
         point_id = self.make_id(rel_path)
         self.store.add_vector(point_id, vec_f32, payload={"filename": str(rel_path)})
 
-        logger.info(f"Added embedding for {rel_path}")
+        logger.debug(f"Added embedding for {rel_path}")
 
     # ---------------------------------------------------------------------
     def add_dir(self, dir_path: Path):
@@ -104,7 +104,7 @@ class VisualSearchEngine:
                 point_id, vec_f32, payload={"filename": str(rel_path)}
             )
 
-        logger.info(f"Indexing directory: {dir_path}")
+        logger.debug(f"Indexing directory: {dir_path}")
         self.inference.process_dir(dir_path, callback=_callback)
 
     # ---------------------------------------------------------------------
@@ -118,7 +118,7 @@ class VisualSearchEngine:
             point = self.store.get_vector(point_id)
             if point and hasattr(point[0], "vector") and point[0].vector is not None:
                 return np.array(point[0].vector, dtype=np.float32)
-            logger.info(f"Embedding not found in store for {rel_path}, computing...")
+            logger.debug(f"Embedding not found in store for {rel_path}, computing...")
 
         return self.inference.process_file(image_path)
 
@@ -126,7 +126,7 @@ class VisualSearchEngine:
     def search(self, query: Union[Path, np.ndarray], limit: int = 5) -> List[dict]:
         """Search similar vectors (does not modify store)."""
         if isinstance(query, Path):
-            logger.info(f"Preparing query embedding for {query}")
+            logger.debug(f"Preparing query embedding for {query}")
             query_vec = self.inference.process_file(query)
             if query_vec is None:
                 logger.warning(f"Failed to compute embedding for {query}")
@@ -135,7 +135,7 @@ class VisualSearchEngine:
             query_vec = query
 
         results = self.store.search(query_vec, limit=limit)
-        logger.info(f"Found {len(results)} results for query.")
+        logger.debug(f"Found {len(results)} results for query.")
         return results
 
     # ---------------------------------------------------------------------
@@ -148,4 +148,4 @@ class VisualSearchEngine:
         rel_path = self._relative_path(image_path)
         point_id = self.make_id(rel_path)
         self.store.delete_vector(point_id)
-        logger.info(f"Deleted embedding for {rel_path}")
+        logger.debug(f"Deleted embedding for {rel_path}")

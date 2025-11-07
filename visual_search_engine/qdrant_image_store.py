@@ -2,10 +2,8 @@ from typing import Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import PointStruct, HnswConfigDiff
 from qdrant_client.models import VectorParams, Distance
-from loguru import logger
+from .logger import logger
 import numpy as np
-from pathlib import Path
-import hashlib
 
 
 class QdrantImageStore:
@@ -30,7 +28,7 @@ class QdrantImageStore:
         optimizer_params = {"max_segment_size": max_segment_size}
 
         if not self.client.collection_exists(collection_name=collection_name):
-            logger.info(f"Creating collection: {collection_name}")
+            logger.debug(f"Creating collection: {collection_name}")
             self.client.create_collection(
                 collection_name=collection_name,
                 vectors_config=vector_params,
@@ -38,7 +36,7 @@ class QdrantImageStore:
                 optimizers_config=optimizer_params,
             )
         else:
-            logger.info(f"Collection '{collection_name}' already exists. Reusing it.")
+            logger.debug(f"Collection '{collection_name}' already exists. Reusing it.")
             existing = self.client.get_collection(collection_name=collection_name)
             existing_params = existing.config.params.vectors
             if (
