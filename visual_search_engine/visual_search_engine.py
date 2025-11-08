@@ -25,7 +25,7 @@ class VisualSearchEngine:
         qdrant_url: str = "http://localhost:6333",
         distance_metric: str = "COSINE",
         profile_batch_size: int = 100,
-        max_images: Optional[int] = 5000,
+        max_images: Optional[int] = None,
         hnsw_m: int = 16,
         hnsw_ef_construct: int = 200,
         max_segment_size: int = 100000,

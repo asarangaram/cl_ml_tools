@@ -14,7 +14,7 @@ class SimilaritySearchEngine(VisualSearchEngine):
         base_folder: Path,
         qdrant_url: str = "http://localhost:6333",
         profile_batch_size: int = 100,
-        max_images: Optional[int] = 5000,
+        max_images: Optional[int] = None,
     ):
         hef_path = Path(__file__).parent / "models" / "resnet_v1_18_feature.hef"
 

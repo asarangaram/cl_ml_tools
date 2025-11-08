@@ -22,7 +22,7 @@ class HailoInference:
         self,
         hef_path: Path,
         profile_batch_size: int = 100,
-        max_images: Optional[int] = 5000,
+        max_images: Optional[int] = None,
     ):
         self.hef_path = Path(hef_path)
         self.profile_batch_size = profile_batch_size
