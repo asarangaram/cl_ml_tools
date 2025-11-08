@@ -158,11 +158,8 @@ class HailoInference:
                         callback(image_path, vec_f32)
                         success_count += 1
                     total_time += time.perf_counter() - start
-
-                    if (
-                        success_count > 0
-                        and (success_count % self.profile_batch_size) == 0
-                    ):
+                    last = i == len(all_files) - 1
+                    if (success_count % self.profile_batch_size) == 0 or last:
                         avg_ms = (total_time * 1000) / success_count
                         error_count = (i + 1) - success_count
                         elapsed = time.perf_counter() - start_time
