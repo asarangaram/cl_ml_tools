@@ -1,9 +1,8 @@
 import numpy as np
 from hailo_platform import VDevice, HailoSchedulingAlgorithm
 from pathlib import Path
-from PIL import Image
 import time
-from typing import Callable, Optional
+from typing import Optional, Dict, List
 from .logger import logger
 
 
@@ -11,11 +10,9 @@ class HailoInference:
     """
     Hailo inference helper that computes embeddings for images.
 
-    - Pure inference logic (no base/relative path handling)
-    - Supports single-file or directory inference
-    - Automatically detects image input size from HEF
-    - Uses callbacks for directory processing
-    - Normalizes embeddings before returning
+    This class is responsible for pure inference logic, accepting pre-processed
+    image buffers and returning embeddings. It automatically detects image
+    input size from the HEF model and normalizes embeddings.
     """
 
     def __init__(
@@ -61,14 +58,10 @@ class HailoInference:
 
     # ---------------------------------------------------------------------
     def _process_image(
-        self, image_path: Path, config, bindings
+        self, input_buffer: np.ndarray, config, bindings, image_path: Path
     ) -> Optional[np.ndarray]:
-        """Run inference on a single image and return normalized embedding."""
+        """Run inference on a single pre-processed image buffer and return normalized embedding."""
         try:
-            with Image.open(image_path) as img:
-                img = img.convert("RGB").resize(self.image_size, Image.LANCZOS)
-                input_buffer = np.array(img, dtype=np.uint8)
-
             # Bind input/output buffers
             bindings.input().set_buffer(input_buffer)
 
@@ -91,44 +84,18 @@ class HailoInference:
             return None
 
     # ---------------------------------------------------------------------
-    def process_file(self, image_path: Path) -> Optional[np.ndarray]:
+    def process_file(self, image_buffer: np.ndarray, image_path: Path) -> Optional[np.ndarray]:
         """
-        Process a single image file and return its embedding (vec_f32) or None.
-        """
-        if not image_path.is_file():
-            logger.warning(f"process_file: {image_path} is not a valid file.")
-            return None
-
-        params = VDevice.create_params()
-        params.scheduling_algorithm = HailoSchedulingAlgorithm.ROUND_ROBIN
-
-        with VDevice(params) as vdevice:
-            infer_model = vdevice.create_infer_model(str(self.hef_path))
-            with infer_model.configure() as config:
-                bindings = config.create_bindings()
-                output_buffer = np.empty(
-                    list(infer_model.output().shape), dtype=np.uint8
-                )
-                bindings.output().set_buffer(output_buffer)
-
-                return self._process_image(image_path, config, bindings)
-
-    # ---------------------------------------------------------------------
-    def process_files(self, image_paths: list[Path], callback: Callable[[Path, np.ndarray], None]):
-        """
-        Process a list of image files and call the callback for each.
+        Process a single pre-processed image buffer and return its embedding (vec_f32) or None.
 
         Args:
-            image_paths: A list of absolute paths to the image files.
-            callback: A function to call for each successfully processed image,
-                      receiving the image path and its embedding.
+            image_buffer: The pre-processed image as a NumPy array.
+            image_path: The original path of the image (for logging).
+
+        Returns:
+            A numpy array representing the image embedding, or None if
+            the embedding cannot be computed.
         """
-        if not image_paths:
-            return
-
-        if callback is None:
-            raise ValueError("Callback function must be provided.")
-
         params = VDevice.create_params()
         params.scheduling_algorithm = HailoSchedulingAlgorithm.ROUND_ROBIN
 
@@ -141,25 +108,44 @@ class HailoInference:
                 )
                 bindings.output().set_buffer(output_buffer)
 
-                total = len(image_paths)
-                total_time = 0.0
-                success_count = 0
-                start_time = time.perf_counter()
+                return self._process_image(image_buffer, config, bindings, image_path)
 
-                for i, image_path in enumerate(image_paths):
-                    start = time.perf_counter()
-                    vec_f32 = self._process_image(image_path, config, bindings)
-                    if vec_f32 is not None:
-                        callback(image_path, vec_f32)
-                        success_count += 1
-                    total_time += time.perf_counter() - start
-                    last = i == len(image_paths) - 1
-                    if (success_count % self.profile_batch_size) == 0 or last:
-                        avg_ms = (total_time * 1000) / success_count if success_count > 0 else 0
-                        error_count = (i + 1) - success_count
-                        elapsed = time.perf_counter() - start_time
-                        logger.info(
-                            f"{elapsed:.2f}s elapsed: processed {success_count}/{total}, "
-                            f"avg {avg_ms:.2f} ms/image "
-                            f"{'(errors: ' + str(error_count) + ')' if error_count > 0 else ''}"
-                        )
+    # ---------------------------------------------------------------------
+    def process_files(
+        self, image_buffers: List[np.ndarray], image_paths: List[Path]
+    ) -> Dict[Path, Optional[np.ndarray]]:
+        """
+        Process a list of pre-processed image buffers and return their embeddings.
+
+        Args:
+            image_buffers: A list of pre-processed images as NumPy arrays.
+            image_paths: A list of original absolute paths corresponding to the image buffers.
+
+        Returns:
+            A dictionary mapping each image path to its computed embedding (NumPy array),
+            or None if the embedding could not be computed for that image.
+        """
+        if not image_buffers:
+            return {}
+
+        if len(image_buffers) != len(image_paths):
+            raise ValueError("Length of image_buffers and image_paths must be the same.")
+
+        results: Dict[Path, Optional[np.ndarray]] = {}
+        params = VDevice.create_params()
+        params.scheduling_algorithm = HailoSchedulingAlgorithm.ROUND_ROBIN
+
+        with VDevice(params) as vdevice:
+            infer_model = vdevice.create_infer_model(str(self.hef_path))
+            with infer_model.configure() as config:
+                bindings = config.create_bindings()
+                output_buffer = np.empty(
+                    list(infer_model.output().shape), dtype=np.uint8
+                )
+                bindings.output().set_buffer(output_buffer)
+
+                for i, input_buffer in enumerate(image_buffers):
+                    image_path = image_paths[i]
+                    vec_f32 = self._process_image(input_buffer, config, bindings, image_path)
+                    results[image_path] = vec_f32
+        return results

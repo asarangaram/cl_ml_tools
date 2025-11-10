@@ -1,8 +1,11 @@
 from pathlib import Path
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Dict
 import numpy as np
 from .logger import logger
 import hashlib
+import time
+from PIL import Image
+import io
 from qdrant_client.models import Distance
 
 from .hailo_inference import HailoInference
@@ -73,6 +76,26 @@ class VisualSearchEngine:
             return path.resolve()
 
     # ---------------------------------------------------------------------
+    def _preprocess_image(self, image_path: Path) -> Optional[np.ndarray]:
+        """
+        Loads and preprocesses an image from the given path.
+
+        Args:
+            image_path: The path to the image file.
+
+        Returns:
+            A NumPy array of the pre-processed image (RGB, resized, uint8),
+            or None if the image cannot be loaded or processed.
+        """
+        try:
+            with Image.open(image_path) as img:
+                img = img.convert("RGB").resize(self.inference.image_size, Image.LANCZOS)
+                return np.array(img, dtype=np.uint8)
+        except Exception as e:
+            logger.warning(f"[ERROR] Failed to load or preprocess {image_path}: {e}")
+            return None
+
+    # ---------------------------------------------------------------------
     def add_file(self, image_path: Path, force: bool = False):
         """
         Computes and stores the embedding for a single image file.
@@ -100,8 +123,14 @@ class VisualSearchEngine:
                 logger.debug(f"Skipping {rel_path}, embedding already exists.")
                 return
 
+        # --- Preprocess image ---
+        image_buffer = self._preprocess_image(image_path)
+        if image_buffer is None:
+            logger.warning(f"Skipping {image_path} due to preprocessing failure.")
+            return
+
         # --- Compute and store embedding ---
-        vec_f32 = self.inference.process_file(image_path)
+        vec_f32 = self.inference.process_file(image_buffer, image_path)
         if vec_f32 is None:
             logger.warning(f"Failed to generate embedding for {image_path}")
             return
@@ -117,13 +146,13 @@ class VisualSearchEngine:
         This method efficiently indexes a directory by first discovering all
         image files. It then filters out images that already have embeddings,
         unless `force` is True. The remaining images are processed in batches
-        to conserve memory.
+        to conserve memory and maximize Hailo throughput.
 
         Args:
             dir_path: The absolute path to the directory to be indexed.
             force: If True, re-computes and updates embeddings even if they
                    already exist. Defaults to False.
-            batch_size: The number of images to process in a single batch.
+            batch_size: The number of images to process in a single batch for Hailo inference.
                         Defaults to 32.
         """
         if not dir_path.is_dir():
@@ -131,6 +160,7 @@ class VisualSearchEngine:
             return
 
         logger.info(f"Starting to index directory: {dir_path}")
+        start_time = time.perf_counter()
 
         # --- 1. Discover all image files ---
         all_files = []
@@ -157,19 +187,72 @@ class VisualSearchEngine:
             logger.info("No new images to process.")
             return
 
-        # --- 3. Process files in batches ---
-        def _callback(image_path, vec_f32):
-            rel_path = self._relative_path(image_path)
-            point_id = self.make_id(rel_path)
-            self.store.add_vector(point_id, vec_f32, payload={"filename": str(rel_path)})
-            logger.debug(f"Added embedding for {rel_path}")
+        # --- 3. Process files in batches (greedy for full batches) ---
+        current_hailo_batch_buffers: List[np.ndarray] = []
+        current_hailo_batch_paths: List[Path] = []
+        total_successful_embeddings = 0
+        total_images_attempted_preprocessing = 0
+        batch_counter = 0
 
-        for i in range(0, len(files_to_process), batch_size):
-            batch = files_to_process[i : i + batch_size]
-            logger.info(f"Processing batch {i//batch_size + 1}/{-(-len(files_to_process)//batch_size)} ({len(batch)} images)")
-            self.inference.process_files(batch, callback=_callback)
+        def _process_and_store_batch(buffers: List[np.ndarray], paths: List[Path], batch_num: int, total_batches: int):
+            nonlocal total_successful_embeddings
+            batch_start_time = time.perf_counter()
+            batch_results = self.inference.process_files(buffers, paths)
+            batch_time = time.perf_counter() - batch_start_time
 
-        logger.info("Finished indexing directory.")
+            successful_embeddings_in_batch = 0
+            for image_path, vec_f32 in batch_results.items():
+                if vec_f32 is not None:
+                    rel_path = self._relative_path(image_path)
+                    point_id = self.make_id(rel_path)
+                    self.store.add_vector(point_id, vec_f32, payload={"filename": str(rel_path)})
+                    successful_embeddings_in_batch += 1
+                    logger.debug(f"Added embedding for {rel_path}")
+
+            total_successful_embeddings += successful_embeddings_in_batch
+
+            avg_ms = (batch_time * 1000) / successful_embeddings_in_batch if successful_embeddings_in_batch > 0 else 0
+            logger.info(
+                f"Processed batch {batch_num}/{total_batches} "
+                f"({successful_embeddings_in_batch}/{len(buffers)} successful embeddings) in {batch_time:.2f}s. Avg: {avg_ms:.2f} ms/image"
+            )
+
+        # Calculate total batches for logging progress
+        # This is an estimate as preprocessing failures can reduce the number of actual Hailo batches
+        estimated_total_batches = -(-len(files_to_process) // batch_size)
+
+        for f in files_to_process:
+            total_images_attempted_preprocessing += 1
+            image_buffer = self._preprocess_image(f)
+            if image_buffer is not None:
+                current_hailo_batch_buffers.append(image_buffer)
+                current_hailo_batch_paths.append(f)
+
+                if len(current_hailo_batch_buffers) == batch_size:
+                    batch_counter += 1
+                    _process_and_store_batch(
+                        current_hailo_batch_buffers,
+                        current_hailo_batch_paths,
+                        batch_counter,
+                        estimated_total_batches
+                    )
+                    current_hailo_batch_buffers = []
+                    current_hailo_batch_paths = []
+            else:
+                logger.warning(f"Skipping {f} due to preprocessing failure.")
+
+        # Process any remaining images (last batch)
+        if current_hailo_batch_buffers:
+            batch_counter += 1
+            _process_and_store_batch(
+                current_hailo_batch_buffers,
+                current_hailo_batch_paths,
+                batch_counter,
+                estimated_total_batches
+            )
+
+        total_time = time.perf_counter() - start_time
+        logger.info(f"Finished indexing directory. Processed {total_successful_embeddings} new embeddings from {total_images_attempted_preprocessing} images attempted preprocessing in {total_time:.2f}s.")
 
     # ---------------------------------------------------------------------
     def get_embedding(self, image_path: Path) -> Optional[np.ndarray]:
@@ -198,7 +281,13 @@ class VisualSearchEngine:
                 return np.array(point[0].vector, dtype=np.float32)
             logger.debug(f"Embedding not found in store for {rel_path}, computing...")
 
-        return self.inference.process_file(image_path)
+        # --- Preprocess image ---
+        image_buffer = self._preprocess_image(image_path)
+        if image_buffer is None:
+            logger.warning(f"Skipping embedding retrieval for {image_path} due to preprocessing failure.")
+            return None
+
+        return self.inference.process_file(image_buffer, image_path)
 
     # ---------------------------------------------------------------------
     def search(self, query: Union[Path, np.ndarray], limit: int = 5) -> List[dict]:
@@ -221,7 +310,12 @@ class VisualSearchEngine:
         """
         if isinstance(query, Path):
             logger.debug(f"Preparing query embedding for {query}")
-            query_vec = self.inference.process_file(query)
+            # --- Preprocess query image ---
+            query_image_buffer = self._preprocess_image(query)
+            if query_image_buffer is None:
+                logger.warning(f"Failed to preprocess query image {query}")
+                return []
+            query_vec = self.inference.process_file(query_image_buffer, query)
             if query_vec is None:
                 logger.warning(f"Failed to compute embedding for {query}")
                 return []
