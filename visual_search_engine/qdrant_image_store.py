@@ -90,7 +90,13 @@ class QdrantImageStore:
         logger.debug(f"Deleted: {point_id}")
 
     # ---------------------------------------------------------------------
-    def search(self, query_vector, limit: int = 5, with_payload: bool = True):
+    def search(
+        self,
+        query_vector,
+        limit: int = 5,
+        with_payload: bool = True,
+        score_threshold=0.85,
+    ):
         """
         Search for similar vectors in the collection.
 
@@ -106,7 +112,7 @@ class QdrantImageStore:
             collection_name=self.collection_name,
             query_vector=query_vector,
             limit=limit,
-            score_threshold=0.85,
+            score_threshold=score_threshold,
             with_payload=with_payload,
         )
 
