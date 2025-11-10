@@ -3,11 +3,11 @@ from typing import Optional, List, Union
 import numpy as np
 from .logger import logger
 import hashlib
-import os
 from qdrant_client.models import Distance
 
 from .hailo_inference import HailoInference
 from .qdrant_image_store import QdrantImageStore
+from .config import Config
 
 
 class VisualSearchEngine:
@@ -24,7 +24,7 @@ class VisualSearchEngine:
         base_folder: Path,
         collection_name: str,
         vector_size: int,
-        qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333"),
+        qdrant_url: str = Config.QDRANT_URL,
         distance_metric: str = "COSINE",
         profile_batch_size: int = 100,
         max_images: Optional[int] = None,
@@ -109,7 +109,21 @@ class VisualSearchEngine:
 
     # ---------------------------------------------------------------------
     def get_embedding(self, image_path: Path) -> Optional[np.ndarray]:
-        """Fetch from store if possible; else compute embedding on the fly."""
+        """
+        Retrieves the embedding for a given image.
+
+        This method first checks if the embedding exists in the vector store.
+        If the image is part of the indexed `base_folder`, it looks up the
+        embedding there. If it's not found or the image is outside the
+        `base_folder`, it computes the embedding on the fly.
+
+        Args:
+            image_path: The absolute path to the image file.
+
+        Returns:
+            A numpy array representing the image embedding, or None if
+            the embedding cannot be computed.
+        """
         rel_path = self._relative_path(image_path)
         is_within_base = rel_path != image_path
 
@@ -153,7 +167,16 @@ class VisualSearchEngine:
 
     # ---------------------------------------------------------------------
     def delete_file(self, image_path: Path):
-        """Delete a stored embedding by file path."""
+        """
+        Deletes a stored embedding from the vector store based on its file path.
+
+        This is useful for removing images from the search index when they are
+        deleted from the filesystem.
+
+        Args:
+            image_path: The absolute path to the image file whose embedding
+                        should be deleted.
+        """
         if not image_path.is_file():
             logger.warning(f"delete_file: {image_path} is not a valid file.")
             return

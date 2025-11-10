@@ -3,15 +3,15 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.models import PointStruct, HnswConfigDiff
 from qdrant_client.models import VectorParams, Distance
 from .logger import logger
+from .config import Config
 import numpy as np
-import os
 
 
 class QdrantImageStore:
     def __init__(
         self,
         collection_name: str,
-        url: str = os.getenv("QDRANT_URL", "http://localhost:6333"),
+        url: str = Config.QDRANT_URL,
         vector_size: int = 512,
         distance: Distance = Distance.COSINE,
         hnsw_m: int = 16,
