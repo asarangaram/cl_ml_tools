@@ -74,7 +74,16 @@ class VisualSearchEngine:
 
     # ---------------------------------------------------------------------
     def add_file(self, image_path: Path):
-        """Compute and store a single file embedding."""
+        """
+        Computes and stores the embedding for a single image file.
+
+        The image's path relative to `base_folder` is used to generate a
+        deterministic ID. The embedding and the relative path are then
+        stored in the vector store.
+
+        Args:
+            image_path: The absolute path to the image file.
+        """
         if not image_path.is_file():
             logger.warning(f"add_file: {image_path} is not a valid file.")
             return
@@ -92,7 +101,16 @@ class VisualSearchEngine:
 
     # ---------------------------------------------------------------------
     def add_dir(self, dir_path: Path):
-        """Compute and store embeddings for all images in a directory."""
+        """
+        Recursively finds and stores embeddings for all images in a directory.
+
+        This method scans the given directory for image files (jpg, jpeg, png),
+        computes an embedding for each, and stores it in the vector store.
+        This is the primary method for bulk-indexing a folder of images.
+
+        Args:
+            dir_path: The absolute path to the directory to be indexed.
+        """
         if not dir_path.is_dir():
             logger.warning(f"add_dir: {dir_path} is not a valid directory.")
             return
@@ -138,7 +156,23 @@ class VisualSearchEngine:
 
     # ---------------------------------------------------------------------
     def search(self, query: Union[Path, np.ndarray], limit: int = 5) -> List[dict]:
-        """Search similar vectors (does not modify store)."""
+        """
+        Finds similar images in the vector store.
+
+        The query can be either a path to an image file or a pre-computed
+        numpy array embedding. If a path is provided, the embedding is
+        computed first. The search results are returned as a list of
+        dictionaries, each containing the ID, score, and filename of a
+        matching image.
+
+        Args:
+            query: The image to search for, as a file path or numpy array.
+            limit: The maximum number of search results to return.
+
+        Returns:
+            A list of dictionaries, where each dictionary represents a
+            similar image and contains its ID, score, and absolute filename.
+        """
         if isinstance(query, Path):
             logger.debug(f"Preparing query embedding for {query}")
             query_vec = self.inference.process_file(query)

@@ -8,6 +8,14 @@ import numpy as np
 
 
 class QdrantImageStore:
+    """
+    Manages image vectors in a Qdrant collection.
+
+    This class provides an interface to interact with Qdrant, handling
+    collection creation, adding new image embeddings, retrieving, deleting,
+    and performing similarity searches. It ensures that the Qdrant collection
+    is properly configured for efficient vector storage and retrieval.
+    """
     def __init__(
         self,
         collection_name: str,
