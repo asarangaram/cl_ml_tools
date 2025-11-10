@@ -68,12 +68,12 @@ class VisualSearchEngine:
         return int(hashlib.sha1(normalized.encode()).hexdigest(), 16) % (2**63)
 
     # ---------------------------------------------------------------------
-    def _relative_path(self, path: Path) -> Path:
+    def _relative_path(self, path: Path) -> Optional[Path]:
         """Compute path relative to base folder, or absolute if outside."""
         try:
             return path.resolve().relative_to(self.base_folder)
         except ValueError:
-            return path.resolve()
+            return None
 
     # ---------------------------------------------------------------------
     def _preprocess_image(self, image_path: Path) -> Optional[np.ndarray]:
@@ -89,14 +89,16 @@ class VisualSearchEngine:
         """
         try:
             with Image.open(image_path) as img:
-                img = img.convert("RGB").resize(self.inference.image_size, Image.LANCZOS)
+                img = img.convert("RGB").resize(
+                    self.inference.image_size, Image.LANCZOS
+                )
                 return np.array(img, dtype=np.uint8)
         except Exception as e:
             logger.warning(f"[ERROR] Failed to load or preprocess {image_path}: {e}")
             return None
 
     # ---------------------------------------------------------------------
-    def add_file(self, image_path: Path, force: bool = False):
+    def add_file(self, image_path: Path, force: bool = False) -> bool:
         """
         Computes and stores the embedding for a single image file.
 
@@ -114,29 +116,35 @@ class VisualSearchEngine:
             return
 
         rel_path = self._relative_path(image_path)
-        point_id = self.make_id(rel_path)
+        if rel_path:
+            point_id = self.make_id(rel_path)
 
-        # --- Skip if embedding exists and force is False ---
-        if not force:
-            existing = self.store.get_vector(point_id)
-            if existing:
-                logger.debug(f"Skipping {rel_path}, embedding already exists.")
+            # --- Skip if embedding exists and force is False ---
+            if not force:
+                existing = self.store.get_vector(point_id)
+                if existing:
+                    logger.debug(f"Skipping {rel_path}, embedding already exists.")
+                    return
+
+            # --- Preprocess image ---
+            image_buffer = self._preprocess_image(image_path)
+            if image_buffer is None:
+                logger.warning(f"Skipping {image_path} due to preprocessing failure.")
                 return
 
-        # --- Preprocess image ---
-        image_buffer = self._preprocess_image(image_path)
-        if image_buffer is None:
-            logger.warning(f"Skipping {image_path} due to preprocessing failure.")
-            return
+            # --- Compute and store embedding ---
+            vec_f32 = self.inference.process_file(image_buffer, image_path)
+            if vec_f32 is None:
+                logger.warning(f"Failed to generate embedding for {image_path}")
+                return
 
-        # --- Compute and store embedding ---
-        vec_f32 = self.inference.process_file(image_buffer, image_path)
-        if vec_f32 is None:
-            logger.warning(f"Failed to generate embedding for {image_path}")
-            return
-
-        self.store.add_vector(point_id, vec_f32, payload={"filename": str(rel_path)})
-        logger.debug(f"Added embedding for {rel_path}")
+            self.store.add_vector(
+                point_id, vec_f32, payload={"filename": str(rel_path)}
+            )
+            logger.debug(f"Added embedding for {rel_path}")
+            return True
+        else:
+            return False
 
     # ---------------------------------------------------------------------
     def add_dir(self, dir_path: Path, force: bool = False, batch_size: int = 32):
@@ -159,6 +167,10 @@ class VisualSearchEngine:
             logger.warning(f"add_dir: {dir_path} is not a valid directory.")
             return
 
+        if not self._relative_path(dir_path):
+            logger.warning(f"add_dir: {dir_path} is not a managed directory")
+            return
+
         logger.info(f"Starting to index directory: {dir_path}")
         start_time = time.perf_counter()
 
@@ -178,10 +190,15 @@ class VisualSearchEngine:
         else:
             for f in all_files:
                 rel_path = self._relative_path(f)
-                point_id = self.make_id(rel_path)
-                if not self.store.get_vector(point_id):
-                    files_to_process.append(f)
-            logger.info(f"Found {len(all_files)} total images. {len(files_to_process)} need processing.")
+                if rel_path:
+                    point_id = self.make_id(rel_path)
+                    if not self.store.get_vector(point_id):
+                        files_to_process.append(f)
+                    else:
+                        logger.warning(f"Skipping {f}: not a managed file or already exists and force is False.")
+            logger.info(
+                f"Found {len(all_files)} total images. {len(files_to_process)} need processing."
+            )
 
         if not files_to_process:
             logger.info("No new images to process.")
@@ -194,7 +211,12 @@ class VisualSearchEngine:
         total_images_attempted_preprocessing = 0
         batch_counter = 0
 
-        def _process_and_store_batch(buffers: List[np.ndarray], paths: List[Path], batch_num: int, total_batches: int):
+        def _process_and_store_batch(
+            buffers: List[np.ndarray],
+            paths: List[Path],
+            batch_num: int,
+            total_batches: int,
+        ):
             nonlocal total_successful_embeddings
             batch_start_time = time.perf_counter()
             batch_results = self.inference.process_files(buffers, paths)
@@ -204,14 +226,23 @@ class VisualSearchEngine:
             for image_path, vec_f32 in batch_results.items():
                 if vec_f32 is not None:
                     rel_path = self._relative_path(image_path)
-                    point_id = self.make_id(rel_path)
-                    self.store.add_vector(point_id, vec_f32, payload={"filename": str(rel_path)})
-                    successful_embeddings_in_batch += 1
-                    logger.debug(f"Added embedding for {rel_path}")
+                    if rel_path:
+                        point_id = self.make_id(rel_path)
+                        self.store.add_vector(
+                            point_id, vec_f32, payload={"filename": str(rel_path)}
+                        )
+                        successful_embeddings_in_batch += 1
+                        logger.debug(f"Added embedding for {rel_path}")
+                    else:
+                        logger.warning(f"Skipping {image_path}: not a managed file during batch storage.")
 
             total_successful_embeddings += successful_embeddings_in_batch
 
-            avg_ms = (batch_time * 1000) / successful_embeddings_in_batch if successful_embeddings_in_batch > 0 else 0
+            avg_ms = (
+                (batch_time * 1000) / successful_embeddings_in_batch
+                if successful_embeddings_in_batch > 0
+                else 0
+            )
             logger.info(
                 f"Processed batch {batch_num}/{total_batches} "
                 f"({successful_embeddings_in_batch}/{len(buffers)} successful embeddings) in {batch_time:.2f}s. Avg: {avg_ms:.2f} ms/image"
@@ -234,7 +265,7 @@ class VisualSearchEngine:
                         current_hailo_batch_buffers,
                         current_hailo_batch_paths,
                         batch_counter,
-                        estimated_total_batches
+                        estimated_total_batches,
                     )
                     current_hailo_batch_buffers = []
                     current_hailo_batch_paths = []
@@ -248,11 +279,13 @@ class VisualSearchEngine:
                 current_hailo_batch_buffers,
                 current_hailo_batch_paths,
                 batch_counter,
-                estimated_total_batches
+                estimated_total_batches,
             )
 
         total_time = time.perf_counter() - start_time
-        logger.info(f"Finished indexing directory. Processed {total_successful_embeddings} new embeddings from {total_images_attempted_preprocessing} images attempted preprocessing in {total_time:.2f}s.")
+        logger.info(
+            f"Finished indexing directory. Processed {total_successful_embeddings} new embeddings from {total_images_attempted_preprocessing} images attempted preprocessing in {total_time:.2f}s."
+        )
 
     # ---------------------------------------------------------------------
     def get_embedding(self, image_path: Path) -> Optional[np.ndarray]:
@@ -272,9 +305,8 @@ class VisualSearchEngine:
             the embedding cannot be computed.
         """
         rel_path = self._relative_path(image_path)
-        is_within_base = rel_path != image_path
 
-        if is_within_base:
+        if rel_path:
             point_id = self.make_id(rel_path)
             point = self.store.get_vector(point_id)
             if point and hasattr(point[0], "vector") and point[0].vector is not None:
@@ -284,7 +316,9 @@ class VisualSearchEngine:
         # --- Preprocess image ---
         image_buffer = self._preprocess_image(image_path)
         if image_buffer is None:
-            logger.warning(f"Skipping embedding retrieval for {image_path} due to preprocessing failure.")
+            logger.warning(
+                f"Skipping embedding retrieval for {image_path} due to preprocessing failure."
+            )
             return None
 
         return self.inference.process_file(image_buffer, image_path)
@@ -356,6 +390,11 @@ class VisualSearchEngine:
             return
 
         rel_path = self._relative_path(image_path)
+
+        if not rel_path:
+            logger.warning("delete_file: Unmanaged file, can't be deleted")
+            return
+
         point_id = self.make_id(rel_path)
         self.store.delete_vector(point_id)
         logger.debug(f"Deleted embedding for {rel_path}")
