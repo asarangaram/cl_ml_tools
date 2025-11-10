@@ -23,10 +23,12 @@ class HailoInference:
         hef_path: Path,
         profile_batch_size: int = 100,
         max_images: Optional[int] = None,
+        timeout: int = 1000,
     ):
         self.hef_path = Path(hef_path)
         self.profile_batch_size = profile_batch_size
         self.max_images = max_images
+        self.timeout = timeout
 
         # --- Automatically detect image input size from HEF ---
         logger.debug(f"Auto-detecting input size from HEF: {self.hef_path}")
@@ -38,14 +40,19 @@ class HailoInference:
             shape = infer_model.input().shape
             logger.debug(f"Detected input shape: {shape}")
 
-            # Extract H×W from shape (supports NCHW or NHWC)
-            if len(shape) == 4:  # e.g. (1, 224, 224, 3)
-                h, w = shape[1], shape[0]
-                raise ValueError(f"Recheck shape for batch mode: {shape}")
-            elif len(shape) == 3:  # e.g. (224, 224, 3)
-                h, w = shape[1], shape[0]
+            # Extract HxW from shape (supports NCHW, NHWC, HWC, CHW)
+            if len(shape) == 4:  # NCHW or NHWC
+                if shape[1] == 3:  # NCHW (e.g., 1, 3, 224, 224)
+                    h, w = shape[2], shape[3]
+                else:  # NHWC (e.g., 1, 224, 224, 3)
+                    h, w = shape[1], shape[2]
+            elif len(shape) == 3:  # HWC or CHW
+                if shape[0] == 3:  # CHW (e.g., 3, 224, 224)
+                    h, w = shape[1], shape[2]
+                else:  # HWC (e.g., 224, 224, 3)
+                    h, w = shape[0], shape[1]
             else:
-                raise ValueError(f"Unexpected input shape: {shape}")
+                raise ValueError(f"Unsupported input shape: {shape}")
 
             image_size = (w, h)
             logger.debug(f"Model expects input image size: {image_size}")
@@ -66,7 +73,7 @@ class HailoInference:
             bindings.input().set_buffer(input_buffer)
 
             # Run synchronous inference
-            config.run([bindings], timeout=1000)
+            config.run([bindings], timeout=self.timeout)
             vec = bindings.output().get_buffer()
 
             # Normalize vector
@@ -103,10 +110,6 @@ class HailoInference:
                     list(infer_model.output().shape), dtype=np.uint8
                 )
                 bindings.output().set_buffer(output_buffer)
-
-                output_buffer = np.empty(
-                    list(infer_model.output().shape), dtype=np.uint8
-                )
 
                 return self._process_image(image_path, config, bindings)
 

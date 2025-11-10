@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Optional
 from .visual_search_engine import VisualSearchEngine
+import os
 
 
 class SimilaritySearchEngine(VisualSearchEngine):
@@ -12,11 +13,11 @@ class SimilaritySearchEngine(VisualSearchEngine):
     def __init__(
         self,
         base_folder: Path,
-        qdrant_url: str = "http://localhost:6333",
+        qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333"),
         profile_batch_size: int = 100,
         max_images: Optional[int] = None,
+        hef_path: Path = Path(__file__).parent / "models" / "resnet_v1_18_feature.hef",
     ):
-        hef_path = Path(__file__).parent / "models" / "resnet_v1_18_feature.hef"
 
         super().__init__(
             hef_path=hef_path,

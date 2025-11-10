@@ -3,6 +3,8 @@ from typing import Optional, List, Union
 import numpy as np
 from .logger import logger
 import hashlib
+import os
+from qdrant_client.models import Distance
 
 from .hailo_inference import HailoInference
 from .qdrant_image_store import QdrantImageStore
@@ -22,7 +24,7 @@ class VisualSearchEngine:
         base_folder: Path,
         collection_name: str,
         vector_size: int,
-        qdrant_url: str = "http://localhost:6333",
+        qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333"),
         distance_metric: str = "COSINE",
         profile_batch_size: int = 100,
         max_images: Optional[int] = None,
@@ -36,8 +38,6 @@ class VisualSearchEngine:
         self.collection_name = collection_name
 
         # --- Initialize Qdrant Store ---
-        from qdrant_client.models import Distance
-
         distance_enum = getattr(Distance, distance_metric.upper(), Distance.COSINE)
 
         self.store = QdrantImageStore(

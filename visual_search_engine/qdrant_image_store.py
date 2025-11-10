@@ -4,13 +4,14 @@ from qdrant_client.http.models import PointStruct, HnswConfigDiff
 from qdrant_client.models import VectorParams, Distance
 from .logger import logger
 import numpy as np
+import os
 
 
 class QdrantImageStore:
     def __init__(
         self,
         collection_name: str,
-        url: str = "http://localhost:6333",
+        url: str = os.getenv("QDRANT_URL", "http://localhost:6333"),
         vector_size: int = 512,
         distance: Distance = Distance.COSINE,
         hnsw_m: int = 16,
@@ -116,14 +117,12 @@ class QdrantImageStore:
             with_payload=with_payload,
         )
 
-        formatted = [
-            {
-                "id": r.id,
-                "score": r.score,
-                "filename": r.payload.get("filename") if r.payload else None,
-            }
-            for r in results
-        ]
+        formatted = []
+        for r in results:
+            point_data = {"id": r.id, "score": r.score}
+            if r.payload:
+                point_data.update(r.payload)
+            formatted.append(point_data)
 
         logger.debug(f"Search returned {len(formatted)} results.")
         return formatted
