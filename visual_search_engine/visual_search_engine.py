@@ -73,57 +73,103 @@ class VisualSearchEngine:
             return path.resolve()
 
     # ---------------------------------------------------------------------
-    def add_file(self, image_path: Path):
+    def add_file(self, image_path: Path, force: bool = False):
         """
         Computes and stores the embedding for a single image file.
 
-        The image's path relative to `base_folder` is used to generate a
-        deterministic ID. The embedding and the relative path are then
-        stored in the vector store.
+        By default, this method will skip processing if an embedding for the
+        given image path already exists in the store. The image's path
+        relative to `base_folder` is used to generate a deterministic ID.
 
         Args:
             image_path: The absolute path to the image file.
+            force: If True, re-computes and updates the embedding even if it
+                   already exists. Defaults to False.
         """
         if not image_path.is_file():
             logger.warning(f"add_file: {image_path} is not a valid file.")
             return
 
+        rel_path = self._relative_path(image_path)
+        point_id = self.make_id(rel_path)
+
+        # --- Skip if embedding exists and force is False ---
+        if not force:
+            existing = self.store.get_vector(point_id)
+            if existing:
+                logger.debug(f"Skipping {rel_path}, embedding already exists.")
+                return
+
+        # --- Compute and store embedding ---
         vec_f32 = self.inference.process_file(image_path)
         if vec_f32 is None:
             logger.warning(f"Failed to generate embedding for {image_path}")
             return
 
-        rel_path = self._relative_path(image_path)
-        point_id = self.make_id(rel_path)
         self.store.add_vector(point_id, vec_f32, payload={"filename": str(rel_path)})
-
         logger.debug(f"Added embedding for {rel_path}")
 
     # ---------------------------------------------------------------------
-    def add_dir(self, dir_path: Path):
+    def add_dir(self, dir_path: Path, force: bool = False, batch_size: int = 32):
         """
         Recursively finds and stores embeddings for all images in a directory.
 
-        This method scans the given directory for image files (jpg, jpeg, png),
-        computes an embedding for each, and stores it in the vector store.
-        This is the primary method for bulk-indexing a folder of images.
+        This method efficiently indexes a directory by first discovering all
+        image files. It then filters out images that already have embeddings,
+        unless `force` is True. The remaining images are processed in batches
+        to conserve memory.
 
         Args:
             dir_path: The absolute path to the directory to be indexed.
+            force: If True, re-computes and updates embeddings even if they
+                   already exist. Defaults to False.
+            batch_size: The number of images to process in a single batch.
+                        Defaults to 32.
         """
         if not dir_path.is_dir():
             logger.warning(f"add_dir: {dir_path} is not a valid directory.")
             return
 
+        logger.info(f"Starting to index directory: {dir_path}")
+
+        # --- 1. Discover all image files ---
+        all_files = []
+        for ext in ("*.jpg", "*.jpeg", "*.png"):
+            all_files.extend(dir_path.rglob(ext))
+
+        if not all_files:
+            logger.warning(f"No image files found in directory: {dir_path}")
+            return
+
+        # --- 2. Filter out existing files if not forcing ---
+        files_to_process = []
+        if force:
+            files_to_process = all_files
+        else:
+            for f in all_files:
+                rel_path = self._relative_path(f)
+                point_id = self.make_id(rel_path)
+                if not self.store.get_vector(point_id):
+                    files_to_process.append(f)
+            logger.info(f"Found {len(all_files)} total images. {len(files_to_process)} need processing.")
+
+        if not files_to_process:
+            logger.info("No new images to process.")
+            return
+
+        # --- 3. Process files in batches ---
         def _callback(image_path, vec_f32):
             rel_path = self._relative_path(image_path)
             point_id = self.make_id(rel_path)
-            self.store.add_vector(
-                point_id, vec_f32, payload={"filename": str(rel_path)}
-            )
+            self.store.add_vector(point_id, vec_f32, payload={"filename": str(rel_path)})
+            logger.debug(f"Added embedding for {rel_path}")
 
-        logger.debug(f"Indexing directory: {dir_path}")
-        self.inference.process_dir(dir_path, callback=_callback)
+        for i in range(0, len(files_to_process), batch_size):
+            batch = files_to_process[i : i + batch_size]
+            logger.info(f"Processing batch {i//batch_size + 1}/{-(-len(files_to_process)//batch_size)} ({len(batch)} images)")
+            self.inference.process_files(batch, callback=_callback)
+
+        logger.info("Finished indexing directory.")
 
     # ---------------------------------------------------------------------
     def get_embedding(self, image_path: Path) -> Optional[np.ndarray]:

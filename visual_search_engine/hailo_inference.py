@@ -114,13 +114,16 @@ class HailoInference:
                 return self._process_image(image_path, config, bindings)
 
     # ---------------------------------------------------------------------
-    def process_dir(self, dir_path: Path, callback: Callable[[Path, np.ndarray], None]):
+    def process_files(self, image_paths: list[Path], callback: Callable[[Path, np.ndarray], None]):
         """
-        Process all images in a directory (recursively) and call the callback
-        for each (image_path, vec_f32).
+        Process a list of image files and call the callback for each.
+
+        Args:
+            image_paths: A list of absolute paths to the image files.
+            callback: A function to call for each successfully processed image,
+                      receiving the image path and its embedding.
         """
-        if not dir_path.is_dir():
-            logger.warning(f"process_dir: {dir_path} is not a valid directory.")
+        if not image_paths:
             return
 
         if callback is None:
@@ -138,32 +141,21 @@ class HailoInference:
                 )
                 bindings.output().set_buffer(output_buffer)
 
-                all_files = []
-                for ext in ("*.jpg", "*.jpeg", "*.png"):
-                    all_files.extend(dir_path.rglob(ext))
-
-                if self.max_images is not None:
-                    all_files = all_files[: self.max_images]
-
-                total = len(all_files)
-                if total == 0:
-                    logger.warning(f"No image files found in directory: {dir_path}")
-                    return
-
+                total = len(image_paths)
                 total_time = 0.0
                 success_count = 0
                 start_time = time.perf_counter()
 
-                for i, image_path in enumerate(all_files):
+                for i, image_path in enumerate(image_paths):
                     start = time.perf_counter()
                     vec_f32 = self._process_image(image_path, config, bindings)
                     if vec_f32 is not None:
                         callback(image_path, vec_f32)
                         success_count += 1
                     total_time += time.perf_counter() - start
-                    last = i == len(all_files) - 1
+                    last = i == len(image_paths) - 1
                     if (success_count % self.profile_batch_size) == 0 or last:
-                        avg_ms = (total_time * 1000) / success_count
+                        avg_ms = (total_time * 1000) / success_count if success_count > 0 else 0
                         error_count = (i + 1) - success_count
                         elapsed = time.perf_counter() - start_time
                         logger.info(
