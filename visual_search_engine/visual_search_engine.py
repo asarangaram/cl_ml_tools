@@ -134,9 +134,22 @@ class VisualSearchEngine:
         else:
             query_vec = query
 
-        results = self.store.search(query_vec, limit=limit)
+        search_results = self.store.search(query_vec, limit=limit)
+
+        results = [
+            {**r, "filename": self.base_folder / r["filename"]}
+            for r in search_results
+            if r.get("filename")
+        ]
+        if isinstance(query, Path):
+            results = [
+                result
+                for result in results
+                if result["filename"].resolve() != query.resolve()
+            ]
+
         logger.debug(f"Found {len(results)} results for query.")
-        return results
+        return results[:limit]
 
     # ---------------------------------------------------------------------
     def delete_file(self, image_path: Path):
