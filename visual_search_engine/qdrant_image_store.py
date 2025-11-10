@@ -106,6 +106,7 @@ class QdrantImageStore:
             collection_name=self.collection_name,
             query_vector=query_vector,
             limit=limit,
+            score_threshold=0.85,
             with_payload=with_payload,
         )
 
