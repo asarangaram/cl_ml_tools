@@ -16,6 +16,7 @@ class QdrantImageStore:
     and performing similarity searches. It ensures that the Qdrant collection
     is properly configured for efficient vector storage and retrieval.
     """
+
     def __init__(
         self,
         collection_name: str,
@@ -91,7 +92,7 @@ class QdrantImageStore:
     # ---------------------------------------------------------------------
     def delete_vector(self, point_id: int):
         """
-        Delete a point based on its deterministic path ID.
+        Delete a point based on its deterministic path-based ID.
         """
         self.client.delete(
             collection_name=self.collection_name, points_selector={"points": [point_id]}

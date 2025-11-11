@@ -94,7 +94,9 @@ class VisualSearchEngine:
                 )
                 return np.array(img, dtype=np.uint8)
         except Exception as e:
-            logger.warning(f"[ERROR] Failed to load or preprocess {image_path}: {e}")
+            logger.warning(
+                f"preprocess_image: Failed to load or preprocess {image_path}: {e}"
+            )
             return None
 
     # ---------------------------------------------------------------------
@@ -112,7 +114,7 @@ class VisualSearchEngine:
                    already exists. Defaults to False.
         """
         if not image_path.is_file():
-            logger.warning(f"add_file: {image_path} is not a valid file.")
+            logger.warning(f"{image_path} is not a valid file.")
             return
 
         rel_path = self._relative_path(image_path)
@@ -164,11 +166,11 @@ class VisualSearchEngine:
                         Defaults to 32.
         """
         if not dir_path.is_dir():
-            logger.warning(f"add_dir: {dir_path} is not a valid directory.")
+            logger.warning(f"{dir_path} is not a valid directory.")
             return
 
         if not self._relative_path(dir_path):
-            logger.warning(f"add_dir: {dir_path} is not a managed directory")
+            logger.warning(f"{dir_path} is not a managed directory")
             return
 
         logger.info(f"Starting to index directory: {dir_path}")
@@ -195,7 +197,9 @@ class VisualSearchEngine:
                     if not self.store.get_vector(point_id):
                         files_to_process.append(f)
                     else:
-                        logger.warning(f"Skipping {f}: not a managed file or already exists and force is False.")
+                        logger.warning(
+                            f"Skipping {f}: not a managed file or already exists and force is False."
+                        )
             logger.info(
                 f"Found {len(all_files)} total images. {len(files_to_process)} need processing."
             )
@@ -234,7 +238,9 @@ class VisualSearchEngine:
                         successful_embeddings_in_batch += 1
                         logger.debug(f"Added embedding for {rel_path}")
                     else:
-                        logger.warning(f"Skipping {image_path}: not a managed file during batch storage.")
+                        logger.warning(
+                            f"Skipping {image_path}: not a managed file during batch storage."
+                        )
 
             total_successful_embeddings += successful_embeddings_in_batch
 
@@ -317,7 +323,7 @@ class VisualSearchEngine:
         image_buffer = self._preprocess_image(image_path)
         if image_buffer is None:
             logger.warning(
-                f"Skipping embedding retrieval for {image_path} due to preprocessing failure."
+                f" Skipping embedding retrieval for {image_path} due to preprocessing failure."
             )
             return None
 
@@ -386,13 +392,13 @@ class VisualSearchEngine:
                         should be deleted.
         """
         if not image_path.is_file():
-            logger.warning(f"delete_file: {image_path} is not a valid file.")
+            logger.warning(f"{image_path} is not a valid file.")
             return
 
         rel_path = self._relative_path(image_path)
 
         if not rel_path:
-            logger.warning("delete_file: Unmanaged file, can't be deleted")
+            logger.warning("Unmanaged file, can't be deleted")
             return
 
         point_id = self.make_id(rel_path)
