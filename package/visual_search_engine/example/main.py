@@ -1,3 +1,4 @@
+import sys
 import time
 import argparse
 from pathlib import Path
@@ -7,8 +8,14 @@ from implementation.inference.hailo_inference import HailoInference
 from implementation.store.qdrant_image_store import QdrantImageStore
 from implementation.progress_bar.progress_bar import ProgressBar
 from qdrant_client.models import Distance
-from logger import logger
+
 from config import Config
+from loguru import logger
+
+
+logger.remove()
+# Add a new handler to sys.stderr with the level from the config
+logger.add(sys.stderr, level=Config.LOG_LEVEL)
 
 
 def main():

@@ -2,7 +2,7 @@ import numpy as np
 from hailo_platform import VDevice, HailoSchedulingAlgorithm
 from pathlib import Path
 import time
-from typing import Optional, Dict, List, str
+from typing import Optional, Dict, List
 from visual_search_engine.ml_inference import MLInference
 
 
