@@ -1,18 +1,34 @@
 import time
 import argparse
 from pathlib import Path
-from visual_search_engine import SimilaritySearchEngine, Config, StoreInterface, MLInference, VisualSearchEngineFileSystem
+from visual_search_engine import (
+    SimilaritySearchEngineFileSystem,
+    Config,
+    StoreInterface,
+    MLInference,
+    VisualSearchEngineFileSystem,
+)
 from implementation.inference.hailo_inference import HailoInference
 from implementation.store.qdrant_image_store import QdrantImageStore
+from implementation.progress_bar.progress_bar import ProgressBar
 from qdrant_client.models import Distance
 from logger import logger
 
+
 def main():
     parser = argparse.ArgumentParser(description="Visual Search Engine Demo")
-    parser.add_argument("--ss", action="store_true", help="Enable similarity search functionality.")
-    parser.add_argument("--add", nargs="+", help="Add file(s) or directory(ies) to the search engine. Requires --ss.")
+    parser.add_argument(
+        "--ss", action="store_true", help="Enable similarity search functionality."
+    )
+    parser.add_argument(
+        "--add",
+        nargs="+",
+        help="Add file(s) or directory(ies) to the search engine. Requires --ss.",
+    )
     parser.add_argument("--search", help="Search for a similar image. Requires --ss.")
-    parser.add_argument("--rootdir", required=True, help="Base directory for the search engine")
+    parser.add_argument(
+        "--rootdir", required=True, help="Base directory for the search engine"
+    )
 
     args = parser.parse_args()
 
@@ -38,16 +54,17 @@ def main():
     qdrant_store = QdrantImageStore(
         collection_name="images2",
         url="http://localhost:6333",
-        vector_size=512, # Default vector size for the model
+        vector_size=512,  # Default vector size for the model
         distance=Distance.COSINE,
         logger=logger,
     )
 
-    engine = SimilaritySearchEngine(
+    engine = SimilaritySearchEngineFileSystem(
         inference_engine=hailo_inference_engine,
         store_interface=qdrant_store,
         base_folder=base_folder,
         logger=logger,
+        progress_bar_class=ProgressBar,
     )
 
     if args.add:
@@ -68,6 +85,7 @@ def main():
         print(f"✅ Search completed in {end - start:.2f} seconds")
         for result in results:
             print(result)
+
 
 if __name__ == "__main__":
     main()

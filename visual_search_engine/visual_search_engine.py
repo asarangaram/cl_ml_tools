@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Optional, List, Union, Dict
 import numpy as np
 
-from .progress_bar import ProgressBar
 import hashlib
 import time
 from PIL import Image
@@ -27,11 +26,13 @@ class VisualSearchEngine:
         inference_engine: MLInference,
         store_interface: StoreInterface,
         logger=None,
+        progress_bar_class=None,
     ):
         """Initialize both inference and vector store."""
         self.inference = inference_engine
         self.store = store_interface
         self.logger = logger
+        self.progress_bar_class = progress_bar_class
 
     # ---------------------------------------------------------------------
     def _preprocess_image(self, path: Path) -> Optional[np.ndarray]:
@@ -113,19 +114,23 @@ class VisualSearchEngine:
             return files
 
         files_to_process: Dict[int, Path] = {}
-        progress_bar = ProgressBar(
-            total_items=len(files),
-            update_interval=25,
-            message="Analyzing data files",
-        )
+        progress_bar = None
+        if self.progress_bar_class:
+            progress_bar = self.progress_bar_class(
+                total_items=len(files),
+                update_interval=25,
+                message="Analyzing data files",
+            )
         for i, id in enumerate(files.keys()):
             if not self.store.get_vector(id):
                 files_to_process[id] = files[id]
             else:
                 if self.logger:
                     self.logger.debug(f"Skipping {id}: already exists.")
-            progress_bar.update(i)
-        progress_bar.close(final_message="Finished successfully")
+            if progress_bar:
+                progress_bar.update(i)
+        if progress_bar:
+            progress_bar.close(final_message="Finished successfully")
 
         if self.logger:
             self.logger.info(
@@ -181,11 +186,13 @@ class VisualSearchEngine:
 
         # Accumulators for the greedy batching approach
         current_batch_buffers: Dict[str, np.ndarray] = {}
-        progress_bar = ProgressBar(
-            total_items=len(files_to_process),
-            update_interval=4,
-            message="Processing images in batches",
-        )
+        progress_bar = None
+        if self.progress_bar_class:
+            progress_bar = self.progress_bar_class(
+                total_items=len(files_to_process),
+                update_interval=4,
+                message="Processing images in batches",
+            )
         additional_msg = ""
         for i, id in enumerate(files_to_process.keys()):
             total_images_attempted += 1
@@ -220,7 +227,8 @@ class VisualSearchEngine:
             else:
                 if self.logger:
                     self.logger.warning(f"Skipping {id} due to preprocessing failure.")
-            progress_bar.update(i, additional_msg, force=False)
+            if progress_bar:
+                progress_bar.update(i, additional_msg, force=False)
 
         # Process any remaining images in the last, potentially partial, batch
         if current_batch_buffers:
@@ -247,7 +255,8 @@ class VisualSearchEngine:
             self.logger.info(
                 f"Finished indexing. Processed {total_successful_embeddings} new embeddings from {total_images_attempted} attempted images in {total_time:.2f}s."
             )
-        progress_bar.close(final_message="Finished successfully")
+        if progress_bar:
+            progress_bar.close(final_message="Finished successfully")
 
     # ---------------------------------------------------------------------
     def get_embedding(self, image_path: Path) -> Optional[np.ndarray]:

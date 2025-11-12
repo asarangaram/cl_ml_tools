@@ -2,14 +2,15 @@ import time
 import sys
 import itertools
 from contextlib import contextmanager
+from visual_search_engine.progress_bar_interface import ProgressBarInterface
 
 
-class ProgressBar:
+class ProgressBar(ProgressBarInterface):
     """
     A simple command-line progress bar with a spinner that updates on specific intervals.
     """
 
-    def __init__(self, total_items, update_interval=20, message="Processing items"):
+    def __init__(self, total_items: int, message: str, update_interval: int):
         self.total = total_items
         self.interval = update_interval
         self.message = message
@@ -18,19 +19,19 @@ class ProgressBar:
         self._current_index = 0
         self._last_line_length = 0
 
-    def update(self, current_index, additional_msg="", force=False):
-        self._current_index = current_index
+    def update(self, current_item: int, additional_msg: str = "", force: bool = False):
+        self._current_index = current_item
         # Only update the display if it's the right interval or the very last item
         if (
-            (current_index % self.interval == 0)
-            or (current_index == self.total - 1)
+            (current_item % self.interval == 0)
+            or (current_item == self.total - 1)
             or force
         ):
             next_char = next(self.spinner)
             elapsed_time = time.time() - self.start_time
             display_message = (
-                f"\r{self.message}... {current_index + 1}/{self.total} completed "
-                f"[{elapsed_time:.1f}s, {elapsed_time*1000/(current_index + 1):0.1f}ms/peritem] {additional_msg} {next_char}"
+                f"\r{self.message}... {current_item + 1}/{self.total} completed "
+                f"[{elapsed_time:.1f}s, {elapsed_time*1000/(current_item + 1):0.1f}ms/peritem] {additional_msg} {next_char}"
             )
             # Pad the line with spaces to ensure we fully overwrite previous output
             spaces_to_pad = self._last_line_length - len(display_message)

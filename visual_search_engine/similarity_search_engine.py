@@ -7,7 +7,7 @@ from ..config import Config
 from .store_interface import StoreInterface
 
 
-class SimilaritySearchEngine(VisualSearchEngineFileSystem):
+class SimilaritySearchEngineFileSystem(VisualSearchEngineFileSystem):
     """
     A specialized visual search engine with sensible defaults for image embeddings.
 
@@ -23,6 +23,7 @@ class SimilaritySearchEngine(VisualSearchEngineFileSystem):
         store_interface: StoreInterface,
         base_folder: Path,
         logger=None,
+        progress_bar_class=None,
     ):
         """
         Initializes the SimilaritySearchEngine.
@@ -36,10 +37,12 @@ class SimilaritySearchEngine(VisualSearchEngineFileSystem):
             store_interface: An instance of StoreInterface to be used for vector storage.
             base_folder: The base directory for image storage and relative path calculations.
             logger: Optional logger instance for logging messages.
+            progress_bar_class: Optional class for progress bar.
         """
         super().__init__(
             inference_engine=inference_engine,
             store_interface=store_interface,
             base_folder=base_folder,
             logger=logger,
+            progress_bar_class=progress_bar_class,
         )

@@ -4,7 +4,6 @@ import numpy as np
 
 from .visual_search_engine import VisualSearchEngine
 
-from .progress_bar import ProgressBar
 import hashlib
 import time
 from PIL import Image
@@ -29,6 +28,7 @@ class VisualSearchEngineFileSystem:
         store_interface: StoreInterface,
         base_folder: Path,
         logger=None,
+        progress_bar_class=None,
     ):
         """Initialize both inference and vector store."""
         self.base_folder = Path(base_folder).resolve()
@@ -36,6 +36,7 @@ class VisualSearchEngineFileSystem:
             inference_engine=inference_engine,
             store_interface=store_interface,
             logger=logger,
+            progress_bar_class=progress_bar_class,
         )
         self.logger = logger
 
