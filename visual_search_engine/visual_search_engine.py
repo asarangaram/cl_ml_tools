@@ -198,8 +198,11 @@ class VisualSearchEngine:
                         files_to_process.append(f)
                     else:
                         logger.warning(
-                            f"Skipping {f}: not a managed file or already exists and force is False."
+                            f"Skipping {f}: already exists and force is False."
                         )
+                else:
+                    logger.warning(f"Skipping {f}: not a managed file ")
+
             logger.info(
                 f"Found {len(all_files)} total images. {len(files_to_process)} need processing."
             )
