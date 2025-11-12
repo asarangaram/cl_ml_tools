@@ -158,6 +158,8 @@ class VisualSearchEngineFileSystem:
                 if query_id and r["id"] == query_id:
                     continue
                 results.append({**r, "filename": self.base_folder / r["filename"]})
+            else:
+                raise Exception("Failed to get payload when searching")
 
         if self.logger:
             self.logger.debug(f"Found {len(results)} results for query.")
