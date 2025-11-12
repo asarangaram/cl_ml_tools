@@ -83,7 +83,7 @@ class VisualSearchEngine:
             existing = self.store.get_vector(id)
             if existing:
                 if self.logger:
-                    self.logger.debug(f"Skipping {id}, embedding already exists.")
+                    self.logger.warning(f"Skipping {id}, embedding already exists.")
                 return True
 
         # --- Preprocess image ---
@@ -102,7 +102,7 @@ class VisualSearchEngine:
 
         self.store.add_vector(id, vec_f32, payload=payload)
         if self.logger:
-            self.logger.debug(f"Added embedding for {id}")
+            self.logger.info(f"Added embedding for {id}")
         return True
 
     # ---------------------------------------------------------------------
@@ -171,7 +171,7 @@ class VisualSearchEngine:
         """
 
         if self.logger:
-            self.logger.info(f"Starting to index directory")
+            self.logger.info(f"Starting to index {len(files)} items")
         start_time = time.perf_counter()
 
         files_to_process = self._discover_and_filter_files(files, force)
@@ -251,12 +251,10 @@ class VisualSearchEngine:
                 )
 
         total_time = time.perf_counter() - start_time
-        if self.logger:
-            self.logger.info(
-                f"Finished indexing. Processed {total_successful_embeddings} new embeddings from {total_images_attempted} attempted images in {total_time:.2f}s."
-            )
         if progress_bar:
-            progress_bar.close(final_message="Finished successfully")
+            progress_bar.close(
+                final_message=f"Finished indexing. Processed {total_successful_embeddings} new embeddings from {total_images_attempted} attempted images in {total_time:.2f}s."
+            )
 
     # ---------------------------------------------------------------------
     def get_embedding(self, image_path: Path) -> Optional[np.ndarray]:

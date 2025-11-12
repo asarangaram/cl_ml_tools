@@ -32,6 +32,9 @@ def main():
     parser.add_argument(
         "--rootdir", required=True, help="Base directory for the search engine"
     )
+    parser.add_argument(
+        "--force", action="store_true", help="replace the existing embedding"
+    )
 
     args = parser.parse_args()
 
@@ -42,6 +45,9 @@ def main():
     if not args.ss:
         print("Please specify --ss for similarity search")
         return
+
+    if not args.add and args.force:
+        print("--force is used with --add. Ignoring")
 
     base_folder = Path(args.rootdir)
 
@@ -71,21 +77,15 @@ def main():
     )
 
     if args.add:
-        start = time.perf_counter()
         for path_str in args.add:
             path = Path(path_str)
             if path.is_dir():
-                engine.add_dir(path)
+                engine.add_dir(path, force=args.force)
             elif path.is_file():
-                engine.add_file(path)
-        end = time.perf_counter()
-        print(f"✅ Completed indexing in {end - start:.2f} seconds")
+                engine.add_file(path, force=args.force)
 
     if args.search:
-        start = time.perf_counter()
         results = engine.search(Path(args.search))
-        end = time.perf_counter()
-        print(f"✅ Search completed in {end - start:.2f} seconds")
         for result in results:
             print(result)
 

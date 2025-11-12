@@ -87,9 +87,6 @@ class VisualSearchEngineFileSystem:
                 self.logger.warning(f"{dir_path} is not a managed directory")
             return
 
-        if self.logger:
-            self.logger.info(f"Starting to index directory: {dir_path}")
-
         all_files = [
             p for ext in ("*.jpg", "*.jpeg", "*.png") for p in dir_path.rglob(ext)
         ]
