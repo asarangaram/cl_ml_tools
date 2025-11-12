@@ -1,18 +1,14 @@
 import time
 import argparse
 from pathlib import Path
-from visual_search_engine import (
-    SimilaritySearchEngineFileSystem,
-    Config,
-    StoreInterface,
-    MLInference,
-    VisualSearchEngineFileSystem,
-)
+
+from visual_search_engine_file_system import VisualSearchEngineFileSystem
 from implementation.inference.hailo_inference import HailoInference
 from implementation.store.qdrant_image_store import QdrantImageStore
 from implementation.progress_bar.progress_bar import ProgressBar
 from qdrant_client.models import Distance
 from logger import logger
+from config import Config
 
 
 def main():
@@ -59,7 +55,7 @@ def main():
         logger=logger,
     )
 
-    engine = SimilaritySearchEngineFileSystem(
+    engine = VisualSearchEngineFileSystem(
         inference_engine=hailo_inference_engine,
         store_interface=qdrant_store,
         base_folder=base_folder,

@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Optional, List, Union, Dict
 import numpy as np
 
-from .visual_search_engine import VisualSearchEngine
+from visual_search_engine.visual_search_engine import VisualSearchEngine
 
 import hashlib
 import time
