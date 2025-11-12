@@ -2,7 +2,7 @@ from typing import Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import PointStruct, HnswConfigDiff
 from qdrant_client.models import VectorParams, Distance
-from config import Config
+
 import numpy as np
 from visual_search_engine.store_interface import StoreInterface
 
@@ -20,7 +20,7 @@ class QdrantImageStore(StoreInterface):
     def __init__(
         self,
         collection_name: str,
-        url: str = Config.QDRANT_URL,
+        url: str,
         vector_size: int = 512,
         distance: Distance = Distance.COSINE,
         hnsw_m: int = 16,
@@ -50,7 +50,9 @@ class QdrantImageStore(StoreInterface):
             )
         else:
             if self.logger:
-                self.logger.debug(f"Collection '{collection_name}' already exists. Reusing it.")
+                self.logger.debug(
+                    f"Collection '{collection_name}' already exists. Reusing it."
+                )
             existing = self.client.get_collection(collection_name=collection_name)
             existing_params = existing.config.params.vectors
             if (
@@ -58,7 +60,9 @@ class QdrantImageStore(StoreInterface):
                 or existing_params.distance.value != vector_params.distance.value
             ):
                 if self.logger:
-                    self.logger.error("Collection config differs from expected parameters!")
+                    self.logger.error(
+                        "Collection config differs from expected parameters!"
+                    )
                     self.logger.error(
                         f"Existing size: {existing_params.size}, distance: {existing_params.distance}"
                     )

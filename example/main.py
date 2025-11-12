@@ -3,19 +3,7 @@ import time
 import argparse
 from pathlib import Path
 
-from visual_search_engine_file_system import VisualSearchEngineFileSystem
-from implementation.inference.hailo_inference import HailoInference
-from implementation.store.qdrant_image_store import QdrantImageStore
-from implementation.progress_bar.progress_bar import ProgressBar
-from qdrant_client.models import Distance
-
-from config import Config
-from loguru import logger
-
-
-logger.remove()
-# Add a new handler to sys.stderr with the level from the config
-logger.add(sys.stderr, level=Config.LOG_LEVEL)
+from implementation.similarity_search import SimilaritySearch
 
 
 def main():
@@ -51,30 +39,7 @@ def main():
 
     base_folder = Path(args.rootdir)
 
-    # Initialize HailoInference
-    hailo_inference_engine = HailoInference(
-        hef_path=Config.DEFAULT_HEF_PATH,
-        profile_batch_size=100,
-        max_items=None,
-        logger=logger,
-    )
-
-    # Initialize QdrantImageStore
-    qdrant_store = QdrantImageStore(
-        collection_name="images2",
-        url="http://localhost:6333",
-        vector_size=512,  # Default vector size for the model
-        distance=Distance.COSINE,
-        logger=logger,
-    )
-
-    engine = VisualSearchEngineFileSystem(
-        inference_engine=hailo_inference_engine,
-        store_interface=qdrant_store,
-        base_folder=base_folder,
-        logger=logger,
-        progress_bar_class=ProgressBar,
-    )
+    engine = SimilaritySearch(base_folder=base_folder)
 
     if args.add:
         for path_str in args.add:

@@ -1,15 +1,12 @@
 from pathlib import Path
-from typing import Optional, List, Union, Dict
+from typing import Callable, Optional, List, Union, Dict
 import numpy as np
-
-import hashlib
 import time
-from PIL import Image
-import io
-from qdrant_client.models import Distance
 
 from .ml_inference import MLInference
 from .store_interface import StoreInterface
+
+FileInput = Union[Path, bytes]
 
 
 class VisualSearchEngine:
@@ -27,40 +24,34 @@ class VisualSearchEngine:
         store_interface: StoreInterface,
         logger=None,
         progress_bar_class=None,
+        preprocess_cb: Optional[Callable[[FileInput], Optional[np.ndarray]]] = None,
     ):
         """Initialize both inference and vector store."""
         self.inference = inference_engine
         self.store = store_interface
         self.logger = logger
         self.progress_bar_class = progress_bar_class
+        self.preprocess_cb = preprocess_cb
 
     # ---------------------------------------------------------------------
-    def _preprocess_image(self, path: Path) -> Optional[np.ndarray]:
-        """
-        Loads and preprocesses an image from the given path.
-
-        Args:
-            path: The path to the image file.
-
-        Returns:
-            A NumPy array of the pre-processed image (RGB, resized, uint8),
-            or None if the image cannot be loaded or processed.
-        """
-        try:
-            with Image.open(path) as img:
-                img = img.convert("RGB").resize(
-                    self.inference.input_size, Image.LANCZOS
-                )
-                return np.array(img, dtype=np.uint8)
-        except Exception as e:
-            if self.logger:
-                self.logger.warning(
-                    f"preprocess_image: Failed to load or preprocess {path}: {e}"
-                )
-            return None
+    def load_to_buffer(self, file_input: FileInput) -> Optional[np.ndarray]:
+        """Load Path or bytes into a bytes buffer"""
+        if isinstance(file_input, Path):
+            try:
+                with open(file_input, "rb") as f:
+                    return np.array(f.read(), dtype=np.uint8)
+            except Exception as e:
+                print(f"Failed to read file {file_input}: {e}")
+                return None
+        elif isinstance(file_input, bytes):
+            return np.array(file_input, dtype=np.uint8)
+        else:
+            raise TypeError(f"Unsupported input type: {type(file_input)}")
 
     # ---------------------------------------------------------------------
-    def add_file(self, id: int, path: Path, payload=None, force: bool = False) -> bool:
+    def add_file(
+        self, id: int, data: FileInput, payload=None, force: bool = False
+    ) -> bool:
         """
         Computes and stores the embedding for a single image file.
 
@@ -73,11 +64,6 @@ class VisualSearchEngine:
             force: If True, re-computes and updates the embedding even if it
                    already exists. Defaults to False.
         """
-        if not path.is_file():
-            if self.logger:
-                self.logger.warning(f"{path} is not a valid file.")
-            return False
-
         # --- Skip if embedding exists and force is False ---
         if not force:
             existing = self.store.get_vector(id)
@@ -86,15 +72,17 @@ class VisualSearchEngine:
                     self.logger.warning(f"Skipping {id}, embedding already exists.")
                 return True
 
-        # --- Preprocess image ---
-        image_buffer = self._preprocess_image(path)
-        if image_buffer is None:
-            if self.logger:
-                self.logger.warning(f"Skipping {path} due to preprocessing failure.")
+        buffer = (
+            self.preprocess_cb(data)
+            if self.preprocess_cb
+            else self.load_to_buffer(data)
+        )
+        if buffer is None:
+            self.logger.warning(f"add_file: Failed to preprocess {id}")
             return False
 
         # --- Compute and store embedding ---
-        vec_f32 = self.inference.infer(image_buffer, str(id))
+        vec_f32 = self.inference.infer(buffer, str(id))
         if vec_f32 is None:
             if self.logger:
                 self.logger.warning(f"Failed to generate embedding for {id}")
@@ -107,8 +95,8 @@ class VisualSearchEngine:
 
     # ---------------------------------------------------------------------
     def _discover_and_filter_files(
-        self, files: Dict[int, Path], force: bool
-    ) -> Dict[int, Path]:
+        self, files: Dict[int, FileInput], force: bool
+    ) -> Dict[int, FileInput]:
 
         if force:
             return files
@@ -196,10 +184,17 @@ class VisualSearchEngine:
         additional_msg = ""
         for i, id in enumerate(files_to_process.keys()):
             total_images_attempted += 1
-            image_buffer = self._preprocess_image(files_to_process[id])
+            data = files_to_process[id]
+            buffer = (
+                self.preprocess_cb(data)
+                if self.preprocess_cb
+                else self.load_to_buffer(data)
+            )
+            if buffer is None:
+                self.logger.warning(f"add_file: Failed load {id}")
 
-            if image_buffer is not None:
-                current_batch_buffers[str(id)] = image_buffer
+            if buffer is not None:
+                current_batch_buffers[str(id)] = buffer
 
                 # If the batch is full, process it
                 if len(current_batch_buffers) == batch_size:
@@ -257,33 +252,32 @@ class VisualSearchEngine:
             )
 
     # ---------------------------------------------------------------------
-    def get_embedding(self, image_path: Path) -> Optional[np.ndarray]:
-        image_buffer = self._preprocess_image(image_path)
-        if image_buffer is None:
-            if self.logger:
-                self.logger.warning(
-                    f" Skipping embedding retrieval for {image_path} due to preprocessing failure."
-                )
-            return None
-
-        return self.inference.infer(image_buffer, str(image_path))
+    def delete_file(self, id: int):
+        self.store.delete_vector(id)
+        if self.logger:
+            self.logger.debug(f"Deleted embedding for {id}")
 
     # ---------------------------------------------------------------------
-    def search(self, query: Union[Path, np.ndarray], limit: int = 5) -> List[dict]:
+    def get_embedding(self, image_path: Path) -> Optional[np.ndarray]:
+        buffer = (
+            self.preprocess_cb(image_path)
+            if self.preprocess_cb
+            else self.load_to_buffer(image_path)
+        )
+        if buffer is None:
+            return None
+
+        return self.inference.infer(buffer, "Unknown")
+
+    # ---------------------------------------------------------------------
+    def search(self, data: FileInput, limit: int = 5) -> List[dict]:
         query_id = None
-        if isinstance(query, Path):
-            query_image_buffer = self._preprocess_image(query)
-            if query_image_buffer is None:
-                if self.logger:
-                    self.logger.warning(f"Failed to preprocess query image {query}")
-                return []
-            query_vec = self.inference.infer(query_image_buffer, str(query))
-            if query_vec is None:
-                if self.logger:
-                    self.logger.warning(f"Failed to compute embedding for {query}")
-                return []
-        else:
-            query_vec = query
+        buffer = (
+            self.preprocess_cb(data)
+            if self.preprocess_cb
+            else self.load_to_buffer(data)
+        )
+        query_vec = self.inference.infer(buffer, "Unknown")
 
         search_results = self.store.search(
             query_vec, limit=limit + 1 if query_id else limit
@@ -292,9 +286,3 @@ class VisualSearchEngine:
         if self.logger:
             self.logger.debug(f"Found {len(search_results)} results for query.")
         return search_results
-
-    # ---------------------------------------------------------------------
-    def delete_file(self, id: int):
-        self.store.delete_vector(id)
-        if self.logger:
-            self.logger.debug(f"Deleted embedding for {id}")
