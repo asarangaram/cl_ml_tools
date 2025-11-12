@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Optional, List, Union, Dict
 import numpy as np
+
+from .progress_bar import ProgressBar
 from .logger import logger
 import hashlib
 import time
@@ -162,7 +164,13 @@ class VisualSearchEngine:
             return all_files
 
         files_to_process = []
-        for f in all_files:
+        progress_bar = ProgressBar(
+            total_items=len(all_files),
+            update_interval=25,
+            message="Analyzing data files",
+        )
+        for i, f in enumerate(all_files):
+            # logger.info(f"checkinn {i}")
             rel_path = self._relative_path(f)
             if rel_path:
                 point_id = self.make_id(rel_path)
@@ -170,6 +178,8 @@ class VisualSearchEngine:
                     files_to_process.append(f)
                 else:
                     logger.debug(f"Skipping {f}: already exists.")
+            progress_bar.update(i)
+        progress_bar.close(final_message="Finished successfully")
 
         logger.info(
             f"Found {len(all_files)} total images. {len(files_to_process)} need processing."
@@ -220,8 +230,13 @@ class VisualSearchEngine:
         # Accumulators for the greedy batching approach
         current_batch_buffers: List[np.ndarray] = []
         current_batch_paths: List[Path] = []
-
-        for f in files_to_process:
+        progress_bar = ProgressBar(
+            total_items=len(files_to_process),
+            update_interval=4,
+            message="Processing images in batches",
+        )
+        additional_msg = ""
+        for i, f in enumerate(files_to_process):
             total_images_attempted += 1
             image_buffer = self._preprocess_image(f)
 
@@ -233,15 +248,24 @@ class VisualSearchEngine:
                 if len(current_batch_buffers) == batch_size:
                     batch_counter += 1
                     batch_start_time = time.perf_counter()
-                    
-                    successful_in_batch = self._process_batch(current_batch_buffers, current_batch_paths)
+
+                    successful_in_batch = self._process_batch(
+                        current_batch_buffers, current_batch_paths
+                    )
                     total_successful_embeddings += successful_in_batch
-                    
+
                     batch_time = time.perf_counter() - batch_start_time
-                    avg_ms = (batch_time * 1000) / successful_in_batch if successful_in_batch > 0 else 0
-                    
-                    logger.info(
-                        f"Processed batch #{batch_counter} ({successful_in_batch}/{len(current_batch_buffers)} successful) in {batch_time:.2f}s. Avg: {avg_ms:.2f} ms/image"
+                    avg_ms = (
+                        (batch_time * 1000) / successful_in_batch
+                        if successful_in_batch > 0
+                        else 0
+                    )
+
+                    # logger.info(
+                    #    f"Processed batch #{batch_counter} ({successful_in_batch}/{len(current_batch_buffers)} successful) in {batch_time:.2f}s. Avg: {avg_ms:.2f} ms/image"
+                    # )
+                    additional_msg = (
+                        f"Inference batch #{batch_counter}  Avg: {avg_ms:.2f} ms/image"
                     )
 
                     # Reset accumulators for the next batch
@@ -249,18 +273,25 @@ class VisualSearchEngine:
                     current_batch_paths = []
             else:
                 logger.warning(f"Skipping {f} due to preprocessing failure.")
+            progress_bar.update(i, additional_msg, force=False)
 
         # Process any remaining images in the last, potentially partial, batch
         if current_batch_buffers:
             batch_counter += 1
             batch_start_time = time.perf_counter()
-            
-            successful_in_batch = self._process_batch(current_batch_buffers, current_batch_paths)
+
+            successful_in_batch = self._process_batch(
+                current_batch_buffers, current_batch_paths
+            )
             total_successful_embeddings += successful_in_batch
-            
+
             batch_time = time.perf_counter() - batch_start_time
-            avg_ms = (batch_time * 1000) / successful_in_batch if successful_in_batch > 0 else 0
-            
+            avg_ms = (
+                (batch_time * 1000) / successful_in_batch
+                if successful_in_batch > 0
+                else 0
+            )
+
             logger.info(
                 f"Processed final batch #{batch_counter} ({successful_in_batch}/{len(current_batch_buffers)} successful) in {batch_time:.2f}s. Avg: {avg_ms:.2f} ms/image"
             )
@@ -269,6 +300,7 @@ class VisualSearchEngine:
         logger.info(
             f"Finished indexing. Processed {total_successful_embeddings} new embeddings from {total_images_attempted} attempted images in {total_time:.2f}s."
         )
+        progress_bar.close(final_message="Finished successfully")
 
     # ---------------------------------------------------------------------
     def get_embedding(self, image_path: Path) -> Optional[np.ndarray]:

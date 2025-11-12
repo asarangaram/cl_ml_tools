@@ -41,7 +41,7 @@ class SimilaritySearchEngine(VisualSearchEngine):
         super().__init__(
             hef_path=hef_path,
             base_folder=base_folder,
-            collection_name="images",
+            collection_name="images2",
             vector_size=vector_size,
             qdrant_url=qdrant_url,
             distance_metric="COSINE",
