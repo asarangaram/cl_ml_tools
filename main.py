@@ -5,12 +5,16 @@ from visual_search_engine import SimilaritySearchEngine
 
 def main():
     parser = argparse.ArgumentParser(description="Visual Search Engine Demo")
-    parser.add_argument("--ss", action="store_true", help="Perform similarity search")
-    parser.add_argument("--add", nargs="+", help="Add file(s) or directory(ies) to the engine")
-    parser.add_argument("--search", help="Search for a similar image")
+    parser.add_argument("--ss", action="store_true", help="Enable similarity search functionality.")
+    parser.add_argument("--add", nargs="+", help="Add file(s) or directory(ies) to the search engine. Requires --ss.")
+    parser.add_argument("--search", help="Search for a similar image. Requires --ss.")
     parser.add_argument("--rootdir", required=True, help="Base directory for the search engine")
 
     args = parser.parse_args()
+
+    if (args.add or args.search) and not args.ss:
+        print("Error: --add and --search options require --ss to be specified.")
+        return
 
     if not args.ss:
         print("Please specify --ss for similarity search")
