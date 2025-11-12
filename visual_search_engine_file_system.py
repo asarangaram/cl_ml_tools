@@ -1,17 +1,13 @@
 from pathlib import Path
 from typing import Optional, List, Union, Dict
 import numpy as np
-
-from visual_search_engine.visual_search_engine import VisualSearchEngine
-
 import hashlib
-import time
-from PIL import Image
-import io
-from qdrant_client.models import Distance
 
-from .ml_inference import MLInference
-from .store_interface import StoreInterface
+from visual_search_engine.visual_search_engine import (
+    VisualSearchEngine,
+    MLInference,
+    StoreInterface,
+)
 
 
 class VisualSearchEngineFileSystem:
