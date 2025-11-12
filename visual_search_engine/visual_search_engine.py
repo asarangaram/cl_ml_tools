@@ -32,7 +32,7 @@ class VisualSearchEngine:
         qdrant_url: str = Config.QDRANT_URL,
         distance_metric: str = "COSINE",
         profile_batch_size: int = 100,
-        max_images: Optional[int] = None,
+        max_items: Optional[int] = None,
         hnsw_m: int = 16,
         hnsw_ef_construct: int = 200,
         max_segment_size: int = 100000,
@@ -59,7 +59,7 @@ class VisualSearchEngine:
         self.inference = HailoInference(
             hef_path=self.hef_path,
             profile_batch_size=profile_batch_size,
-            max_images=max_images,
+            max_items=max_items,
         )
 
     # ---------------------------------------------------------------------
@@ -92,7 +92,7 @@ class VisualSearchEngine:
         try:
             with Image.open(image_path) as img:
                 img = img.convert("RGB").resize(
-                    self.inference.image_size, Image.LANCZOS
+                    self.inference.input_size, Image.LANCZOS
                 )
                 return np.array(img, dtype=np.uint8)
         except Exception as e:
@@ -137,7 +137,7 @@ class VisualSearchEngine:
                 return
 
             # --- Compute and store embedding ---
-            vec_f32 = self.inference.process_file(image_buffer, image_path)
+            vec_f32 = self.inference.infer(image_buffer, str(image_path))
             if vec_f32 is None:
                 logger.warning(f"Failed to generate embedding for {image_path}")
                 return
@@ -188,7 +188,8 @@ class VisualSearchEngine:
 
     def _process_batch(self, buffers: List[np.ndarray], paths: List[Path]) -> int:
         """Process a batch of images and store their embeddings."""
-        batch_results = self.inference.process_files(buffers, paths)
+        image_buffers_dict = {str(path): buffer for path, buffer in zip(paths, buffers)}
+        batch_results = self.inference.infer_batch(image_buffers_dict)
         successful_embeddings = 0
         for image_path, vec_f32 in batch_results.items():
             if vec_f32 is not None:
@@ -336,7 +337,7 @@ class VisualSearchEngine:
             )
             return None
 
-        return self.inference.process_file(image_buffer, image_path)
+        return self.inference.infer(image_buffer, str(image_path))
 
     # ---------------------------------------------------------------------
     def search(self, query: Union[Path, np.ndarray], limit: int = 5) -> List[dict]:
@@ -368,7 +369,7 @@ class VisualSearchEngine:
             if query_image_buffer is None:
                 logger.warning(f"Failed to preprocess query image {query}")
                 return []
-            query_vec = self.inference.process_file(query_image_buffer, query)
+            query_vec = self.inference.infer(query_image_buffer, str(query))
             if query_vec is None:
                 logger.warning(f"Failed to compute embedding for {query}")
                 return []
