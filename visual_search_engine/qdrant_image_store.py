@@ -5,9 +5,10 @@ from qdrant_client.models import VectorParams, Distance
 from .logger import logger
 from .config import Config
 import numpy as np
+from .store_interface import StoreInterface
 
 
-class QdrantImageStore:
+class QdrantImageStore(StoreInterface):
     """
     Manages image vectors in a Qdrant collection.
 

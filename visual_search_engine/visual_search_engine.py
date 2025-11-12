@@ -14,6 +14,7 @@ from .hailo_inference import HailoInference
 from .ml_inference import MLInference
 from .qdrant_image_store import QdrantImageStore
 from .config import Config
+from .store_interface import StoreInterface
 
 
 class VisualSearchEngine:
@@ -27,32 +28,13 @@ class VisualSearchEngine:
     def __init__(
         self,
         inference_engine: MLInference,
+        store_interface: StoreInterface,
         base_folder: Path,
-        collection_name: str,
-        vector_size: int,
-        qdrant_url: str = Config.QDRANT_URL,
-        distance_metric: str = "COSINE",
-        hnsw_m: int = 16,
-        hnsw_ef_construct: int = 200,
-        max_segment_size: int = 100000,
     ):
         """Initialize both inference and vector store."""
         self.base_folder = Path(base_folder).resolve()
-        self.collection_name = collection_name
         self.inference = inference_engine
-
-        # --- Initialize Qdrant Store ---
-        distance_enum = getattr(Distance, distance_metric.upper(), Distance.COSINE)
-
-        self.store = QdrantImageStore(
-            collection_name=collection_name,
-            url=qdrant_url,
-            vector_size=vector_size,
-            distance=distance_enum,
-            hnsw_m=hnsw_m,
-            hnsw_ef_construct=hnsw_ef_construct,
-            max_segment_size=max_segment_size,
-        )
+        self.store = store_interface
 
     # ---------------------------------------------------------------------
     @staticmethod

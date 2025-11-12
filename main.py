@@ -1,7 +1,8 @@
 import time
 import argparse
 from pathlib import Path
-from visual_search_engine import SimilaritySearchEngine, HailoInference, Config
+from visual_search_engine import SimilaritySearchEngine, HailoInference, Config, QdrantImageStore, StoreInterface
+from qdrant_client.models import Distance
 
 def main():
     parser = argparse.ArgumentParser(description="Visual Search Engine Demo")
@@ -29,11 +30,18 @@ def main():
         max_items=None,
     )
 
+    # Initialize QdrantImageStore
+    qdrant_store = QdrantImageStore(
+        collection_name="images2",
+        url="http://localhost:6333",
+        vector_size=512, # Default vector size for the model
+        distance=Distance.COSINE,
+    )
+
     engine = SimilaritySearchEngine(
         inference_engine=hailo_inference_engine,
+        store_interface=qdrant_store,
         base_folder=base_folder,
-        qdrant_url="http://localhost:6333",
-        vector_size=512, # Default vector size for the model
     )
 
     if args.add:
