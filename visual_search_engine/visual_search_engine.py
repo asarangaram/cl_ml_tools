@@ -10,10 +10,7 @@ from PIL import Image
 import io
 from qdrant_client.models import Distance
 
-from .hailo_inference import HailoInference
 from .ml_inference import MLInference
-from .qdrant_image_store import QdrantImageStore
-from .config import Config
 from .store_interface import StoreInterface
 
 

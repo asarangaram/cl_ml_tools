@@ -2,10 +2,10 @@ from typing import Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import PointStruct, HnswConfigDiff
 from qdrant_client.models import VectorParams, Distance
-from .logger import logger
-from .config import Config
+from ...logger import logger
+from ...config import Config
 import numpy as np
-from .store_interface import StoreInterface
+from ...store_interface import StoreInterface
 
 
 class QdrantImageStore(StoreInterface):
