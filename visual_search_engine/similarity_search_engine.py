@@ -2,12 +2,12 @@ from pathlib import Path
 from typing import Optional
 
 from .ml_inference import MLInference
-from .visual_search_engine import VisualSearchEngine
-from .config import Config
+from .visual_search_engine import VisualSearchEngineFileSystem
+from ..config import Config
 from .store_interface import StoreInterface
 
 
-class SimilaritySearchEngine(VisualSearchEngine):
+class SimilaritySearchEngine(VisualSearchEngineFileSystem):
     """
     A specialized visual search engine with sensible defaults for image embeddings.
 
