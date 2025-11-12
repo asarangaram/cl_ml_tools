@@ -2,10 +2,9 @@ from typing import Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import PointStruct, HnswConfigDiff
 from qdrant_client.models import VectorParams, Distance
-from ...logger import logger
-from ...config import Config
+from config import Config
 import numpy as np
-from ...store_interface import StoreInterface
+from visual_search_engine.store_interface import StoreInterface
 
 
 class QdrantImageStore(StoreInterface):
@@ -27,19 +26,22 @@ class QdrantImageStore(StoreInterface):
         hnsw_m: int = 16,
         hnsw_ef_construct: int = 200,
         max_segment_size: int = 100000,
+        logger=None,
     ):
         """
         Initialize the Qdrant image vector store, creating the collection if missing.
         """
         self.collection_name = collection_name
         self.client = QdrantClient(url)
+        self.logger = logger
 
         vector_params = VectorParams(size=vector_size, distance=distance)
         hnsw_params = HnswConfigDiff(m=hnsw_m, ef_construct=hnsw_ef_construct)
         optimizer_params = {"max_segment_size": max_segment_size}
 
         if not self.client.collection_exists(collection_name=collection_name):
-            logger.debug(f"Creating collection: {collection_name}")
+            if self.logger:
+                self.logger.debug(f"Creating collection: {collection_name}")
             self.client.create_collection(
                 collection_name=collection_name,
                 vectors_config=vector_params,
@@ -47,20 +49,22 @@ class QdrantImageStore(StoreInterface):
                 optimizers_config=optimizer_params,
             )
         else:
-            logger.debug(f"Collection '{collection_name}' already exists. Reusing it.")
+            if self.logger:
+                self.logger.debug(f"Collection '{collection_name}' already exists. Reusing it.")
             existing = self.client.get_collection(collection_name=collection_name)
             existing_params = existing.config.params.vectors
             if (
                 existing_params.size != vector_params.size
                 or existing_params.distance.value != vector_params.distance.value
             ):
-                logger.error("Collection config differs from expected parameters!")
-                logger.error(
-                    f"Existing size: {existing_params.size}, distance: {existing_params.distance}"
-                )
-                logger.error(
-                    f"Expected size: {vector_params.size}, distance: {vector_params.distance}"
-                )
+                if self.logger:
+                    self.logger.error("Collection config differs from expected parameters!")
+                    self.logger.error(
+                        f"Existing size: {existing_params.size}, distance: {existing_params.distance}"
+                    )
+                    self.logger.error(
+                        f"Expected size: {vector_params.size}, distance: {vector_params.distance}"
+                    )
                 raise ValueError("Collection config mismatch.")
 
     # ---------------------------------------------------------------------
@@ -78,7 +82,8 @@ class QdrantImageStore(StoreInterface):
         )
 
         self.client.upsert(collection_name=self.collection_name, points=[point])
-        logger.debug(f"Upserted: {point_id} ")
+        if self.logger:
+            self.logger.debug(f"Upserted: {point_id} ")
 
     # ---------------------------------------------------------------------
     def get_vector(self, point_id: int):
@@ -98,7 +103,8 @@ class QdrantImageStore(StoreInterface):
         self.client.delete(
             collection_name=self.collection_name, points_selector={"points": [point_id]}
         )
-        logger.debug(f"Deleted: {point_id}")
+        if self.logger:
+            self.logger.debug(f"Deleted: {point_id}")
 
     # ---------------------------------------------------------------------
     def search(
@@ -134,5 +140,6 @@ class QdrantImageStore(StoreInterface):
                 point_data.update(r.payload)
             formatted.append(point_data)
 
-        logger.debug(f"Search returned {len(formatted)} results.")
+        if self.logger:
+            self.logger.debug(f"Search returned {len(formatted)} results.")
         return formatted

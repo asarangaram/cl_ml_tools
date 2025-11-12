@@ -22,6 +22,7 @@ class SimilaritySearchEngine(VisualSearchEngineFileSystem):
         inference_engine: MLInference,
         store_interface: StoreInterface,
         base_folder: Path,
+        logger=None,
     ):
         """
         Initializes the SimilaritySearchEngine.
@@ -34,9 +35,11 @@ class SimilaritySearchEngine(VisualSearchEngineFileSystem):
             inference_engine: An instance of MLInference to be used for embedding computation.
             store_interface: An instance of StoreInterface to be used for vector storage.
             base_folder: The base directory for image storage and relative path calculations.
+            logger: Optional logger instance for logging messages.
         """
         super().__init__(
             inference_engine=inference_engine,
             store_interface=store_interface,
             base_folder=base_folder,
+            logger=logger,
         )

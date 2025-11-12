@@ -1,8 +1,11 @@
 import time
 import argparse
 from pathlib import Path
-from visual_search_engine import SimilaritySearchEngine, HailoInference, Config, QdrantImageStore, StoreInterface
+from visual_search_engine import SimilaritySearchEngine, Config, StoreInterface, MLInference, VisualSearchEngineFileSystem
+from implementation.inference.hailo_inference import HailoInference
+from implementation.store.qdrant_image_store import QdrantImageStore
 from qdrant_client.models import Distance
+from logger import logger
 
 def main():
     parser = argparse.ArgumentParser(description="Visual Search Engine Demo")
@@ -28,6 +31,7 @@ def main():
         hef_path=Config.DEFAULT_HEF_PATH,
         profile_batch_size=100,
         max_items=None,
+        logger=logger,
     )
 
     # Initialize QdrantImageStore
@@ -36,12 +40,14 @@ def main():
         url="http://localhost:6333",
         vector_size=512, # Default vector size for the model
         distance=Distance.COSINE,
+        logger=logger,
     )
 
     engine = SimilaritySearchEngine(
         inference_engine=hailo_inference_engine,
         store_interface=qdrant_store,
         base_folder=base_folder,
+        logger=logger,
     )
 
     if args.add:

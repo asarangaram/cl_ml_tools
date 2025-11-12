@@ -3,8 +3,7 @@ from hailo_platform import VDevice, HailoSchedulingAlgorithm
 from pathlib import Path
 import time
 from typing import Optional, Dict, List, str
-from .logger import logger
-from .ml_inference import MLInference
+from visual_search_engine.ml_inference import MLInference
 
 
 class HailoInference(MLInference):
@@ -22,21 +21,25 @@ class HailoInference(MLInference):
         profile_batch_size: int = 100,
         max_items: Optional[int] = None,
         timeout: int = 1000,
+        logger=None,
     ):
         self.hef_path = Path(hef_path)
         self.profile_batch_size = profile_batch_size
         self.max_items = max_items
         self.timeout = timeout
+        self.logger = logger
 
         # --- Automatically detect input size from HEF ---
-        logger.debug(f"Auto-detecting input size from HEF: {self.hef_path}")
+        if self.logger:
+            self.logger.debug(f"Auto-detecting input size from HEF: {self.hef_path}")
         params = VDevice.create_params()
         params.scheduling_algorithm = HailoSchedulingAlgorithm.ROUND_ROBIN
 
         with VDevice(params) as vdevice:
             infer_model = vdevice.create_infer_model(str(self.hef_path))
             shape = infer_model.input().shape
-            logger.debug(f"Detected input shape: {shape}")
+            if self.logger:
+                self.logger.debug(f"Detected input shape: {shape}")
 
             # Extract HxW from shape (supports NCHW, NHWC, HWC, CHW)
             if len(shape) == 4:  # NCHW or NHWC
@@ -53,7 +56,8 @@ class HailoInference(MLInference):
                 raise ValueError(f"Unsupported input shape: {shape}")
 
             input_size = (w, h)
-            logger.debug(f"Model expects input size: {input_size}")
+            if self.logger:
+                self.logger.debug(f"Model expects input size: {input_size}")
 
         self._input_size = input_size
 
@@ -76,14 +80,21 @@ class HailoInference(MLInference):
             if norm > 0:
                 vec_f32 /= norm
             else:
-                logger.warning(f"Zero norm vector for {label}")
+                if self.logger:
+                    self.logger.warning(f"Zero norm vector for {label}")
                 return None
             return vec_f32
         except (ValueError, RuntimeError) as e:
-            logger.warning(f"[ERROR] Failed to process {label} due to {type(e).__name__}: {e}")
+            if self.logger:
+                self.logger.warning(
+                    f"[ERROR] Failed to process {label} due to {type(e).__name__}: {e}"
+                )
             return None
         except Exception as e:
-            logger.critical(f"[CRITICAL] An unexpected error occurred while processing {label}: {e}")
+            if self.logger:
+                self.logger.critical(
+                    f"[CRITICAL] An unexpected error occurred while processing {label}: {e}"
+                )
             return None
 
     # ---------------------------------------------------------------------
@@ -144,6 +155,8 @@ class HailoInference(MLInference):
                 bindings.output().set_buffer(output_buffer)
 
                 for label, input_buffer in buffers.items():
-                    vec_f32 = self._process_buffer(input_buffer, config, bindings, label)
+                    vec_f32 = self._process_buffer(
+                        input_buffer, config, bindings, label
+                    )
                     results[label] = vec_f32
         return results

@@ -3,7 +3,6 @@ from typing import Optional, List, Union, Dict
 import numpy as np
 
 from .progress_bar import ProgressBar
-from ..logger import logger
 import hashlib
 import time
 from PIL import Image
@@ -27,10 +26,12 @@ class VisualSearchEngine:
         *,
         inference_engine: MLInference,
         store_interface: StoreInterface,
+        logger=None,
     ):
         """Initialize both inference and vector store."""
         self.inference = inference_engine
         self.store = store_interface
+        self.logger = logger
 
     # ---------------------------------------------------------------------
     def _preprocess_image(self, path: Path) -> Optional[np.ndarray]:
@@ -51,9 +52,10 @@ class VisualSearchEngine:
                 )
                 return np.array(img, dtype=np.uint8)
         except Exception as e:
-            logger.warning(
-                f"preprocess_image: Failed to load or preprocess {path}: {e}"
-            )
+            if self.logger:
+                self.logger.warning(
+                    f"preprocess_image: Failed to load or preprocess {path}: {e}"
+                )
             return None
 
     # ---------------------------------------------------------------------
@@ -71,30 +73,35 @@ class VisualSearchEngine:
                    already exists. Defaults to False.
         """
         if not path.is_file():
-            logger.warning(f"{path} is not a valid file.")
+            if self.logger:
+                self.logger.warning(f"{path} is not a valid file.")
             return False
 
         # --- Skip if embedding exists and force is False ---
         if not force:
             existing = self.store.get_vector(id)
             if existing:
-                logger.debug(f"Skipping {id}, embedding already exists.")
+                if self.logger:
+                    self.logger.debug(f"Skipping {id}, embedding already exists.")
                 return True
 
         # --- Preprocess image ---
         image_buffer = self._preprocess_image(path)
         if image_buffer is None:
-            logger.warning(f"Skipping {path} due to preprocessing failure.")
+            if self.logger:
+                self.logger.warning(f"Skipping {path} due to preprocessing failure.")
             return False
 
         # --- Compute and store embedding ---
         vec_f32 = self.inference.infer(image_buffer, str(id))
         if vec_f32 is None:
-            logger.warning(f"Failed to generate embedding for {id}")
+            if self.logger:
+                self.logger.warning(f"Failed to generate embedding for {id}")
             return False
 
         self.store.add_vector(id, vec_f32, payload=payload)
-        logger.debug(f"Added embedding for {id}")
+        if self.logger:
+            self.logger.debug(f"Added embedding for {id}")
         return True
 
     # ---------------------------------------------------------------------
@@ -115,13 +122,15 @@ class VisualSearchEngine:
             if not self.store.get_vector(id):
                 files_to_process[id] = files[id]
             else:
-                logger.debug(f"Skipping {id}: already exists.")
+                if self.logger:
+                    self.logger.debug(f"Skipping {id}: already exists.")
             progress_bar.update(i)
         progress_bar.close(final_message="Finished successfully")
 
-        logger.info(
-            f"{len(files)} total images. {len(files_to_process)} need processing."
-        )
+        if self.logger:
+            self.logger.info(
+                f"{len(files)} total images. {len(files_to_process)} need processing."
+            )
         return files_to_process
 
     def _process_batch(
@@ -156,12 +165,14 @@ class VisualSearchEngine:
         platforms that require fixed-size batches.
         """
 
-        logger.info(f"Starting to index directory")
+        if self.logger:
+            self.logger.info(f"Starting to index directory")
         start_time = time.perf_counter()
 
         files_to_process = self._discover_and_filter_files(files, force)
         if not files_to_process:
-            logger.info("No new images to process.")
+            if self.logger:
+                self.logger.info("No new images to process.")
             return
 
         total_successful_embeddings = 0
@@ -207,7 +218,8 @@ class VisualSearchEngine:
                     # Reset accumulators for the next batch
                     current_batch_buffers = {}
             else:
-                logger.warning(f"Skipping {id} due to preprocessing failure.")
+                if self.logger:
+                    self.logger.warning(f"Skipping {id} due to preprocessing failure.")
             progress_bar.update(i, additional_msg, force=False)
 
         # Process any remaining images in the last, potentially partial, batch
@@ -225,23 +237,26 @@ class VisualSearchEngine:
                 else 0
             )
 
-            logger.info(
-                f"Processed final batch #{batch_counter} ({successful_in_batch}/{len(current_batch_buffers)} successful) in {batch_time:.2f}s. Avg: {avg_ms:.2f} ms/image"
-            )
+            if self.logger:
+                self.logger.info(
+                    f"Processed final batch #{batch_counter} ({successful_in_batch}/{len(current_batch_buffers)} successful) in {batch_time:.2f}s. Avg: {avg_ms:.2f} ms/image"
+                )
 
         total_time = time.perf_counter() - start_time
-        logger.info(
-            f"Finished indexing. Processed {total_successful_embeddings} new embeddings from {total_images_attempted} attempted images in {total_time:.2f}s."
-        )
+        if self.logger:
+            self.logger.info(
+                f"Finished indexing. Processed {total_successful_embeddings} new embeddings from {total_images_attempted} attempted images in {total_time:.2f}s."
+            )
         progress_bar.close(final_message="Finished successfully")
 
     # ---------------------------------------------------------------------
     def get_embedding(self, image_path: Path) -> Optional[np.ndarray]:
         image_buffer = self._preprocess_image(image_path)
         if image_buffer is None:
-            logger.warning(
-                f" Skipping embedding retrieval for {image_path} due to preprocessing failure."
-            )
+            if self.logger:
+                self.logger.warning(
+                    f" Skipping embedding retrieval for {image_path} due to preprocessing failure."
+                )
             return None
 
         return self.inference.infer(image_buffer, str(image_path))
@@ -252,11 +267,13 @@ class VisualSearchEngine:
         if isinstance(query, Path):
             query_image_buffer = self._preprocess_image(query)
             if query_image_buffer is None:
-                logger.warning(f"Failed to preprocess query image {query}")
+                if self.logger:
+                    self.logger.warning(f"Failed to preprocess query image {query}")
                 return []
             query_vec = self.inference.infer(query_image_buffer, str(query))
             if query_vec is None:
-                logger.warning(f"Failed to compute embedding for {query}")
+                if self.logger:
+                    self.logger.warning(f"Failed to compute embedding for {query}")
                 return []
         else:
             query_vec = query
@@ -265,10 +282,12 @@ class VisualSearchEngine:
             query_vec, limit=limit + 1 if query_id else limit
         )
 
-        logger.debug(f"Found {len(search_results)} results for query.")
+        if self.logger:
+            self.logger.debug(f"Found {len(search_results)} results for query.")
         return search_results
 
     # ---------------------------------------------------------------------
     def delete_file(self, id: int):
         self.store.delete_vector(id)
-        logger.debug(f"Deleted embedding for {id}")
+        if self.logger:
+            self.logger.debug(f"Deleted embedding for {id}")

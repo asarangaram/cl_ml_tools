@@ -5,7 +5,6 @@ import numpy as np
 from .visual_search_engine import VisualSearchEngine
 
 from .progress_bar import ProgressBar
-from ..logger import logger
 import hashlib
 import time
 from PIL import Image
@@ -29,12 +28,16 @@ class VisualSearchEngineFileSystem:
         inference_engine: MLInference,
         store_interface: StoreInterface,
         base_folder: Path,
+        logger=None,
     ):
         """Initialize both inference and vector store."""
         self.base_folder = Path(base_folder).resolve()
         self.engine = VisualSearchEngine(
-            inference_engine=inference_engine, store_interface=store_interface
+            inference_engine=inference_engine,
+            store_interface=store_interface,
+            logger=logger,
         )
+        self.logger = logger
 
     # ---------------------------------------------------------------------
     @staticmethod
@@ -65,7 +68,8 @@ class VisualSearchEngineFileSystem:
                    already exists. Defaults to False.
         """
         if not image_path.is_file():
-            logger.warning(f"{image_path} is not a valid file.")
+            if self.logger:
+                self.logger.warning(f"{image_path} is not a valid file.")
             return
 
         rel_path = self._relative_path(image_path)
@@ -77,21 +81,25 @@ class VisualSearchEngineFileSystem:
 
     def add_dir(self, dir_path: Path, force: bool = False, batch_size: int = 32):
         if not dir_path.is_dir():
-            logger.warning(f"{dir_path} is not a valid directory.")
+            if self.logger:
+                self.logger.warning(f"{dir_path} is not a valid directory.")
             return
 
         if not self._relative_path(dir_path):
-            logger.warning(f"{dir_path} is not a managed directory")
+            if self.logger:
+                self.logger.warning(f"{dir_path} is not a managed directory")
             return
 
-        logger.info(f"Starting to index directory: {dir_path}")
+        if self.logger:
+            self.logger.info(f"Starting to index directory: {dir_path}")
 
         all_files = [
             p for ext in ("*.jpg", "*.jpeg", "*.png") for p in dir_path.rglob(ext)
         ]
 
         if not all_files:
-            logger.info("No new images to process.")
+            if self.logger:
+                self.logger.info("No new images to process.")
             return
 
         files: Dict[int, Path] = {}
@@ -132,7 +140,8 @@ class VisualSearchEngineFileSystem:
         """
         query_id = None
         if isinstance(query, Path):
-            logger.debug(f"Preparing query embedding for {query}")
+            if self.logger:
+                self.logger.debug(f"Preparing query embedding for {query}")
             rel_path = self._relative_path(query)
             if rel_path:
                 query_id = self.make_id(rel_path)
@@ -149,7 +158,8 @@ class VisualSearchEngineFileSystem:
                     continue
                 results.append({**r, "filename": self.base_folder / r["filename"]})
 
-        logger.debug(f"Found {len(results)} results for query.")
+        if self.logger:
+            self.logger.debug(f"Found {len(results)} results for query.")
         return results[:limit]
 
     # ---------------------------------------------------------------------
@@ -165,13 +175,15 @@ class VisualSearchEngineFileSystem:
                         should be deleted.
         """
         if not image_path.is_file():
-            logger.warning(f"{image_path} is not a valid file.")
+            if self.logger:
+                self.logger.warning(f"{image_path} is not a valid file.")
             return
 
         rel_path = self._relative_path(image_path)
 
         if not rel_path:
-            logger.warning("Unmanaged file, can't be deleted")
+            if self.logger:
+                self.logger.warning("Unmanaged file, can't be deleted")
             return
 
         point_id = self.make_id(rel_path)
