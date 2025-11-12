@@ -57,7 +57,7 @@ class VisualSearchEngine:
             return None
 
     # ---------------------------------------------------------------------
-    def add_file(self, id: str, path: Path, payload=None, force: bool = False) -> bool:
+    def add_file(self, id: int, path: Path, payload=None, force: bool = False) -> bool:
         """
         Computes and stores the embedding for a single image file.
 
@@ -65,33 +65,33 @@ class VisualSearchEngine:
         given id already exists in the store.
 
         Args:
-            id: ???
+            id: The unique identifier for the image.
             path: The absolute path to the image file.
             force: If True, re-computes and updates the embedding even if it
                    already exists. Defaults to False.
         """
         if not path.is_file():
             logger.warning(f"{path} is not a valid file.")
-            return
+            return False
 
         # --- Skip if embedding exists and force is False ---
         if not force:
             existing = self.store.get_vector(id)
             if existing:
                 logger.debug(f"Skipping {id}, embedding already exists.")
-                return False
+                return True
 
         # --- Preprocess image ---
         image_buffer = self._preprocess_image(path)
         if image_buffer is None:
             logger.warning(f"Skipping {path} due to preprocessing failure.")
-            return
+            return False
 
         # --- Compute and store embedding ---
-        vec_f32 = self.inference.infer(image_buffer, id)
+        vec_f32 = self.inference.infer(image_buffer, str(id))
         if vec_f32 is None:
-            logger.warning(f"Failed to generate embedding for {path}")
-            return
+            logger.warning(f"Failed to generate embedding for {id}")
+            return False
 
         self.store.add_vector(id, vec_f32, payload=payload)
         logger.debug(f"Added embedding for {id}")
@@ -99,13 +99,13 @@ class VisualSearchEngine:
 
     # ---------------------------------------------------------------------
     def _discover_and_filter_files(
-        self, files: Dict[str, Path], force: bool
-    ) -> Dict[str, Path]:
+        self, files: Dict[int, Path], force: bool
+    ) -> Dict[int, Path]:
 
         if force:
             return files
 
-        files_to_process: Dict[str, Path] = {}
+        files_to_process: Dict[int, Path] = {}
         progress_bar = ProgressBar(
             total_items=len(files),
             update_interval=25,
@@ -125,14 +125,15 @@ class VisualSearchEngine:
         return files_to_process
 
     def _process_batch(
-        self, buffers: Dict[str, np.ndarray], payload: Dict[str, Dict] = None
+        self, buffers: Dict[str, np.ndarray], payload: Dict[int, Dict] = None
     ) -> int:
         """Process a batch of images and store their embeddings."""
 
         batch_results = self.inference.infer_batch(buffers)
         successful_embeddings = 0
-        for id, vec_f32 in batch_results.items():
+        for id_str, vec_f32 in batch_results.items():
             if vec_f32 is not None:
+                id = int(id_str)
                 self.store.add_vector(
                     id,
                     vec_f32,
@@ -144,10 +145,10 @@ class VisualSearchEngine:
 
     def add_all(
         self,
-        files: Dict[str, Path],
+        files: Dict[int, Path],
         force: bool = False,
         batch_size: int = 32,
-        payload: Dict[str, Dict] = None,
+        payload: Dict[int, Dict] = None,
     ):
         """
         Recursively finds and stores embeddings for all images in a directory using a greedy batching strategy.
@@ -168,8 +169,7 @@ class VisualSearchEngine:
         batch_counter = 0
 
         # Accumulators for the greedy batching approach
-        current_batch_buffers: List[str, np.ndarray] = []
-        current_batch_paths: List[Path] = []
+        current_batch_buffers: Dict[str, np.ndarray] = {}
         progress_bar = ProgressBar(
             total_items=len(files_to_process),
             update_interval=4,
@@ -181,7 +181,7 @@ class VisualSearchEngine:
             image_buffer = self._preprocess_image(files_to_process[id])
 
             if image_buffer is not None:
-                current_batch_buffers[id] = image_buffer
+                current_batch_buffers[str(id)] = image_buffer
 
                 # If the batch is full, process it
                 if len(current_batch_buffers) == batch_size:
@@ -200,16 +200,12 @@ class VisualSearchEngine:
                         else 0
                     )
 
-                    # logger.info(
-                    #    f"Processed batch #{batch_counter} ({successful_in_batch}/{len(current_batch_buffers)} successful) in {batch_time:.2f}s. Avg: {avg_ms:.2f} ms/image"
-                    # )
                     additional_msg = (
                         f"Inference batch #{batch_counter}  Avg: {avg_ms:.2f} ms/image"
                     )
 
                     # Reset accumulators for the next batch
-                    current_batch_buffers = []
-                    current_batch_paths = []
+                    current_batch_buffers = {}
             else:
                 logger.warning(f"Skipping {id} due to preprocessing failure.")
             progress_bar.update(i, additional_msg, force=False)
@@ -219,9 +215,7 @@ class VisualSearchEngine:
             batch_counter += 1
             batch_start_time = time.perf_counter()
 
-            successful_in_batch = self._process_batch(
-                current_batch_buffers, current_batch_paths
-            )
+            successful_in_batch = self._process_batch(current_batch_buffers, payload)
             total_successful_embeddings += successful_in_batch
 
             batch_time = time.perf_counter() - batch_start_time
@@ -275,6 +269,6 @@ class VisualSearchEngine:
         return search_results
 
     # ---------------------------------------------------------------------
-    def delete_file(self, id: str):
+    def delete_file(self, id: int):
         self.store.delete_vector(id)
         logger.debug(f"Deleted embedding for {id}")

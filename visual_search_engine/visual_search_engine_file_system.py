@@ -75,22 +75,6 @@ class VisualSearchEngineFileSystem:
         else:
             return False
 
-    def _process_batch(self, buffers: List[np.ndarray], paths: List[Path]) -> int:
-        """Process a batch of images and store their embeddings."""
-        image_buffers_dict = {str(path): buffer for path, buffer in zip(paths, buffers)}
-        batch_results = self.inference.infer_batch(image_buffers_dict)
-        successful_embeddings = 0
-        for image_path, vec_f32 in batch_results.items():
-            if vec_f32 is not None:
-                rel_path = self._relative_path(image_path)
-                if rel_path:
-                    point_id = self.make_id(rel_path)
-                    self.store.add_vector(
-                        point_id, vec_f32, payload={"filename": str(rel_path)}
-                    )
-                    successful_embeddings += 1
-        return successful_embeddings
-
     def add_dir(self, dir_path: Path, force: bool = False, batch_size: int = 32):
         if not dir_path.is_dir():
             logger.warning(f"{dir_path} is not a valid directory.")
@@ -102,28 +86,30 @@ class VisualSearchEngineFileSystem:
 
         logger.info(f"Starting to index directory: {dir_path}")
 
-        files_to_process = [
+        all_files = [
             p for ext in ("*.jpg", "*.jpeg", "*.png") for p in dir_path.rglob(ext)
         ]
 
-        if not files_to_process:
+        if not all_files:
             logger.info("No new images to process.")
             return
 
-        files = {}
-        payloads = {}
-        for file in files_to_process:
+        files: Dict[int, Path] = {}
+        payloads: Dict[int, Dict] = {}
+        for file in all_files:
             rel_path = self._relative_path(file)
             if rel_path:
                 id = self.make_id(rel_path)
                 files[id] = file
                 payloads[id] = {"filename": str(rel_path)}
 
-        self.engine.add_all(files=files, payload=payloads)
+        self.engine.add_all(
+            files=files, payload=payloads, force=force, batch_size=batch_size
+        )
 
     # ---------------------------------------------------------------------
     def get_embedding(self, image_path: Path) -> Optional[np.ndarray]:
-        self.engine.get_embedding(image_path=image_path)
+        return self.engine.get_embedding(image_path=image_path)
 
     # ---------------------------------------------------------------------
     def search(self, query: Union[Path, np.ndarray], limit: int = 5) -> List[dict]:
@@ -151,7 +137,7 @@ class VisualSearchEngineFileSystem:
             if rel_path:
                 query_id = self.make_id(rel_path)
 
-        search_results = self.store.search(
+        search_results = self.engine.search(
             query, limit=limit + 1 if query_id else limit
         )
 
