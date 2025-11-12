@@ -62,14 +62,10 @@ class HailoInference:
     ) -> Optional[np.ndarray]:
         """Run inference on a single pre-processed image buffer and return normalized embedding."""
         try:
-            # Bind input/output buffers
             bindings.input().set_buffer(input_buffer)
-
-            # Run synchronous inference
             config.run([bindings], timeout=self.timeout)
             vec = bindings.output().get_buffer()
 
-            # Normalize vector
             vec_f32 = vec.astype("float32")
             norm = np.linalg.norm(vec_f32)
             if norm > 0:
@@ -78,9 +74,11 @@ class HailoInference:
                 logger.warning(f"Zero norm vector for {image_path}")
                 return None
             return vec_f32
-
+        except (ValueError, RuntimeError) as e:
+            logger.warning(f"[ERROR] Failed to process {image_path} due to {type(e).__name__}: {e}")
+            return None
         except Exception as e:
-            logger.warning(f"[ERROR] Failed to process {image_path}: {e}")
+            logger.critical(f"[CRITICAL] An unexpected error occurred while processing {image_path}: {e}")
             return None
 
     # ---------------------------------------------------------------------

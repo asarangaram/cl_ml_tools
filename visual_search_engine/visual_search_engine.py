@@ -149,21 +149,53 @@ class VisualSearchEngine:
             return False
 
     # ---------------------------------------------------------------------
+    def _discover_and_filter_files(self, dir_path: Path, force: bool) -> List[Path]:
+        """Discover and filter image files in a directory."""
+        all_files = [
+            p for ext in ("*.jpg", "*.jpeg", "*.png") for p in dir_path.rglob(ext)
+        ]
+        if not all_files:
+            logger.warning(f"No image files found in directory: {dir_path}")
+            return []
+
+        if force:
+            return all_files
+
+        files_to_process = []
+        for f in all_files:
+            rel_path = self._relative_path(f)
+            if rel_path:
+                point_id = self.make_id(rel_path)
+                if not self.store.get_vector(point_id):
+                    files_to_process.append(f)
+                else:
+                    logger.debug(f"Skipping {f}: already exists.")
+
+        logger.info(
+            f"Found {len(all_files)} total images. {len(files_to_process)} need processing."
+        )
+        return files_to_process
+
+    def _process_batch(self, buffers: List[np.ndarray], paths: List[Path]) -> int:
+        """Process a batch of images and store their embeddings."""
+        batch_results = self.inference.process_files(buffers, paths)
+        successful_embeddings = 0
+        for image_path, vec_f32 in batch_results.items():
+            if vec_f32 is not None:
+                rel_path = self._relative_path(image_path)
+                if rel_path:
+                    point_id = self.make_id(rel_path)
+                    self.store.add_vector(
+                        point_id, vec_f32, payload={"filename": str(rel_path)}
+                    )
+                    successful_embeddings += 1
+        return successful_embeddings
+
     def add_dir(self, dir_path: Path, force: bool = False, batch_size: int = 32):
         """
-        Recursively finds and stores embeddings for all images in a directory.
-
-        This method efficiently indexes a directory by first discovering all
-        image files. It then filters out images that already have embeddings,
-        unless `force` is True. The remaining images are processed in batches
-        to conserve memory and maximize Hailo throughput.
-
-        Args:
-            dir_path: The absolute path to the directory to be indexed.
-            force: If True, re-computes and updates embeddings even if they
-                   already exist. Defaults to False.
-            batch_size: The number of images to process in a single batch for Hailo inference.
-                        Defaults to 32.
+        Recursively finds and stores embeddings for all images in a directory using a greedy batching strategy.
+        This method ensures that each batch sent to the inference engine is full, which is crucial for
+        platforms that require fixed-size batches.
         """
         if not dir_path.is_dir():
             logger.warning(f"{dir_path} is not a valid directory.")
@@ -176,124 +208,66 @@ class VisualSearchEngine:
         logger.info(f"Starting to index directory: {dir_path}")
         start_time = time.perf_counter()
 
-        # --- 1. Discover all image files ---
-        all_files = []
-        for ext in ("*.jpg", "*.jpeg", "*.png"):
-            all_files.extend(dir_path.rglob(ext))
-
-        if not all_files:
-            logger.warning(f"No image files found in directory: {dir_path}")
-            return
-
-        # --- 2. Filter out existing files if not forcing ---
-        files_to_process = []
-        if force:
-            files_to_process = all_files
-        else:
-            for f in all_files:
-                rel_path = self._relative_path(f)
-                if rel_path:
-                    point_id = self.make_id(rel_path)
-                    if not self.store.get_vector(point_id):
-                        files_to_process.append(f)
-                    else:
-                        logger.warning(
-                            f"Skipping {f}: already exists and force is False."
-                        )
-                else:
-                    logger.warning(f"Skipping {f}: not a managed file ")
-
-            logger.info(
-                f"Found {len(all_files)} total images. {len(files_to_process)} need processing."
-            )
-
+        files_to_process = self._discover_and_filter_files(dir_path, force)
         if not files_to_process:
             logger.info("No new images to process.")
             return
 
-        # --- 3. Process files in batches (greedy for full batches) ---
-        current_hailo_batch_buffers: List[np.ndarray] = []
-        current_hailo_batch_paths: List[Path] = []
         total_successful_embeddings = 0
-        total_images_attempted_preprocessing = 0
+        total_images_attempted = 0
         batch_counter = 0
 
-        def _process_and_store_batch(
-            buffers: List[np.ndarray],
-            paths: List[Path],
-            batch_num: int,
-            total_batches: int,
-        ):
-            nonlocal total_successful_embeddings
-            batch_start_time = time.perf_counter()
-            batch_results = self.inference.process_files(buffers, paths)
-            batch_time = time.perf_counter() - batch_start_time
-
-            successful_embeddings_in_batch = 0
-            for image_path, vec_f32 in batch_results.items():
-                if vec_f32 is not None:
-                    rel_path = self._relative_path(image_path)
-                    if rel_path:
-                        point_id = self.make_id(rel_path)
-                        self.store.add_vector(
-                            point_id, vec_f32, payload={"filename": str(rel_path)}
-                        )
-                        successful_embeddings_in_batch += 1
-                        logger.debug(f"Added embedding for {rel_path}")
-                    else:
-                        logger.warning(
-                            f"Skipping {image_path}: not a managed file during batch storage."
-                        )
-
-            total_successful_embeddings += successful_embeddings_in_batch
-
-            avg_ms = (
-                (batch_time * 1000) / successful_embeddings_in_batch
-                if successful_embeddings_in_batch > 0
-                else 0
-            )
-            logger.info(
-                f"Processed batch {batch_num}/{total_batches} "
-                f"({successful_embeddings_in_batch}/{len(buffers)} successful embeddings) in {batch_time:.2f}s. Avg: {avg_ms:.2f} ms/image"
-            )
-
-        # Calculate total batches for logging progress
-        # This is an estimate as preprocessing failures can reduce the number of actual Hailo batches
-        estimated_total_batches = -(-len(files_to_process) // batch_size)
+        # Accumulators for the greedy batching approach
+        current_batch_buffers: List[np.ndarray] = []
+        current_batch_paths: List[Path] = []
 
         for f in files_to_process:
-            total_images_attempted_preprocessing += 1
+            total_images_attempted += 1
             image_buffer = self._preprocess_image(f)
-            if image_buffer is not None:
-                current_hailo_batch_buffers.append(image_buffer)
-                current_hailo_batch_paths.append(f)
 
-                if len(current_hailo_batch_buffers) == batch_size:
+            if image_buffer is not None:
+                current_batch_buffers.append(image_buffer)
+                current_batch_paths.append(f)
+
+                # If the batch is full, process it
+                if len(current_batch_buffers) == batch_size:
                     batch_counter += 1
-                    _process_and_store_batch(
-                        current_hailo_batch_buffers,
-                        current_hailo_batch_paths,
-                        batch_counter,
-                        estimated_total_batches,
+                    batch_start_time = time.perf_counter()
+                    
+                    successful_in_batch = self._process_batch(current_batch_buffers, current_batch_paths)
+                    total_successful_embeddings += successful_in_batch
+                    
+                    batch_time = time.perf_counter() - batch_start_time
+                    avg_ms = (batch_time * 1000) / successful_in_batch if successful_in_batch > 0 else 0
+                    
+                    logger.info(
+                        f"Processed batch #{batch_counter} ({successful_in_batch}/{len(current_batch_buffers)} successful) in {batch_time:.2f}s. Avg: {avg_ms:.2f} ms/image"
                     )
-                    current_hailo_batch_buffers = []
-                    current_hailo_batch_paths = []
+
+                    # Reset accumulators for the next batch
+                    current_batch_buffers = []
+                    current_batch_paths = []
             else:
                 logger.warning(f"Skipping {f} due to preprocessing failure.")
 
-        # Process any remaining images (last batch)
-        if current_hailo_batch_buffers:
+        # Process any remaining images in the last, potentially partial, batch
+        if current_batch_buffers:
             batch_counter += 1
-            _process_and_store_batch(
-                current_hailo_batch_buffers,
-                current_hailo_batch_paths,
-                batch_counter,
-                estimated_total_batches,
+            batch_start_time = time.perf_counter()
+            
+            successful_in_batch = self._process_batch(current_batch_buffers, current_batch_paths)
+            total_successful_embeddings += successful_in_batch
+            
+            batch_time = time.perf_counter() - batch_start_time
+            avg_ms = (batch_time * 1000) / successful_in_batch if successful_in_batch > 0 else 0
+            
+            logger.info(
+                f"Processed final batch #{batch_counter} ({successful_in_batch}/{len(current_batch_buffers)} successful) in {batch_time:.2f}s. Avg: {avg_ms:.2f} ms/image"
             )
 
         total_time = time.perf_counter() - start_time
         logger.info(
-            f"Finished indexing directory. Processed {total_successful_embeddings} new embeddings from {total_images_attempted_preprocessing} images attempted preprocessing in {total_time:.2f}s."
+            f"Finished indexing. Processed {total_successful_embeddings} new embeddings from {total_images_attempted} attempted images in {total_time:.2f}s."
         )
 
     # ---------------------------------------------------------------------
@@ -351,9 +325,13 @@ class VisualSearchEngine:
             A list of dictionaries, where each dictionary represents a
             similar image and contains its ID, score, and absolute filename.
         """
+        query_id = None
         if isinstance(query, Path):
             logger.debug(f"Preparing query embedding for {query}")
-            # --- Preprocess query image ---
+            rel_path = self._relative_path(query)
+            if rel_path:
+                query_id = self.make_id(rel_path)
+
             query_image_buffer = self._preprocess_image(query)
             if query_image_buffer is None:
                 logger.warning(f"Failed to preprocess query image {query}")
@@ -365,19 +343,17 @@ class VisualSearchEngine:
         else:
             query_vec = query
 
-        search_results = self.store.search(query_vec, limit=limit)
+        search_results = self.store.search(
+            query_vec, limit=limit + 1 if query_id else limit
+        )
 
-        results = [
-            {**r, "filename": self.base_folder / r["filename"]}
-            for r in search_results
-            if r.get("filename")
-        ]
-        if isinstance(query, Path):
-            results = [
-                result
-                for result in results
-                if result["filename"].resolve() != query.resolve()
-            ]
+        results = []
+        for r in search_results:
+            if r.get("filename"):
+                # Exclude the query image itself from the results
+                if query_id and r["id"] == query_id:
+                    continue
+                results.append({**r, "filename": self.base_folder / r["filename"]})
 
         logger.debug(f"Found {len(results)} results for query.")
         return results[:limit]
