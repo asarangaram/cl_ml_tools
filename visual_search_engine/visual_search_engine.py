@@ -11,6 +11,7 @@ import io
 from qdrant_client.models import Distance
 
 from .hailo_inference import HailoInference
+from .ml_inference import MLInference
 from .qdrant_image_store import QdrantImageStore
 from .config import Config
 
@@ -25,22 +26,20 @@ class VisualSearchEngine:
 
     def __init__(
         self,
-        hef_path: Path,
+        inference_engine: MLInference,
         base_folder: Path,
         collection_name: str,
         vector_size: int,
         qdrant_url: str = Config.QDRANT_URL,
         distance_metric: str = "COSINE",
-        profile_batch_size: int = 100,
-        max_items: Optional[int] = None,
         hnsw_m: int = 16,
         hnsw_ef_construct: int = 200,
         max_segment_size: int = 100000,
     ):
         """Initialize both inference and vector store."""
         self.base_folder = Path(base_folder).resolve()
-        self.hef_path = Path(hef_path).resolve()
         self.collection_name = collection_name
+        self.inference = inference_engine
 
         # --- Initialize Qdrant Store ---
         distance_enum = getattr(Distance, distance_metric.upper(), Distance.COSINE)
@@ -53,13 +52,6 @@ class VisualSearchEngine:
             hnsw_m=hnsw_m,
             hnsw_ef_construct=hnsw_ef_construct,
             max_segment_size=max_segment_size,
-        )
-
-        # --- Initialize Hailo Inference ---
-        self.inference = HailoInference(
-            hef_path=self.hef_path,
-            profile_batch_size=profile_batch_size,
-            max_items=max_items,
         )
 
     # ---------------------------------------------------------------------

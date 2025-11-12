@@ -4,9 +4,10 @@ from pathlib import Path
 import time
 from typing import Optional, Dict, List, str
 from .logger import logger
+from .ml_inference import MLInference
 
 
-class HailoInference:
+class HailoInference(MLInference):
     """
     Hailo inference helper that computes embeddings for input data.
 
@@ -54,7 +55,11 @@ class HailoInference:
             input_size = (w, h)
             logger.debug(f"Model expects input size: {input_size}")
 
-        self.input_size = input_size
+        self._input_size = input_size
+
+    @property
+    def input_size(self) -> tuple[int, int]:
+        return self._input_size
 
     # ---------------------------------------------------------------------
     def _process_buffer(

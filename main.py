@@ -1,7 +1,7 @@
 import time
 import argparse
 from pathlib import Path
-from visual_search_engine import SimilaritySearchEngine
+from visual_search_engine import SimilaritySearchEngine, HailoInference, Config
 
 def main():
     parser = argparse.ArgumentParser(description="Visual Search Engine Demo")
@@ -21,9 +21,19 @@ def main():
         return
 
     base_folder = Path(args.rootdir)
+
+    # Initialize HailoInference
+    hailo_inference_engine = HailoInference(
+        hef_path=Config.DEFAULT_HEF_PATH,
+        profile_batch_size=100,
+        max_items=None,
+    )
+
     engine = SimilaritySearchEngine(
+        inference_engine=hailo_inference_engine,
         base_folder=base_folder,
         qdrant_url="http://localhost:6333",
+        vector_size=512, # Default vector size for the model
     )
 
     if args.add:
