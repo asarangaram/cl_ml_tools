@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(
-    name="visual_search_engine",
+    name="cl_ml_tools",
     version="0.1.0",
     author="Your Name",
     author_email="your.email@example.com",
@@ -9,7 +9,7 @@ setup(
     long_description=open('README.md').read(),
     long_description_content_type="text/markdown",
     url="http://your-repository-url.com",
-    packages=['visual_search_engine'],
+    packages=['cl_ml_tools'],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",

@@ -9,7 +9,7 @@ from .store_interface import StoreInterface
 FileInput = Union[Path, bytes]
 
 
-class VisualSearchEngine:
+class VectorCore:
     """
     Base class for visual search engines.
 

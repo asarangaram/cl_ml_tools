@@ -6,7 +6,7 @@ from typing import Optional, List, Union, Dict
 import numpy as np
 import hashlib
 from PIL import Image
-from visual_search_engine.visual_search_engine import VisualSearchEngine, FileInput
+from cl_ml_tools.vector_core import VectorCore, FileInput
 from .inference.hailo_inference import HailoInference
 from .store.qdrant_image_store import QdrantImageStore
 from .progress_bar.progress_bar import ProgressBar
@@ -68,7 +68,7 @@ class SimilaritySearch:
             distance=Distance.COSINE,
             logger=logger,
         )
-        self.engine = VisualSearchEngine(
+        self.engine = VectorCore(
             inference_engine=self.hailo_inference_engine,
             store_interface=self.qdrant_store,
             logger=logger,
