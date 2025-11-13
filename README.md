@@ -1,6 +1,6 @@
 # cl_ml_tools: Command-Line Machine Learning Toolkit
 
-`cl_ml_tools` is a Python package designed to provide a collection of robust, reusable, and command-line friendly tools for common machine learning tasks. The goal is to offer modular components that can be easily integrated into larger applications or used as standalone utilities.
+`cl_ml_tools` is a Python package designed to provide a collection of robust, reusable, and command-line friendly tools for common machine learning tasks. The goal is to offer modular components that can be easily integrated into larger applications or used as standalone utilities. These tools are specifically developed and tested for deployment on edge devices and low-resource systems, ensuring efficient performance where computational power is limited.
 
 ## Features
 
