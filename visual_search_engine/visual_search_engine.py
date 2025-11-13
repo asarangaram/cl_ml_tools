@@ -60,7 +60,7 @@ class VisualSearchEngine:
 
         Args:
             id: The unique identifier for the image.
-            path: The absolute path to the image file.
+            data: The file input, which can be a Path object or bytes.
             force: If True, re-computes and updates the embedding even if it
                    already exists. Defaults to False.
         """
@@ -174,9 +174,19 @@ class VisualSearchEngine:
         payload: Dict[int, Dict] = None,
     ):
         """
-        Recursively finds and stores embeddings for all images in a directory using a greedy batching strategy.
-        This method ensures that each batch sent to the inference engine is full, which is crucial for
-        platforms that require fixed-size batches.
+        Computes and stores embeddings for a dictionary of files, using a greedy batching strategy.
+
+        This method processes files in batches to optimize inference performance. It can skip files
+        that already have embeddings unless 'force' is set to True.
+
+        Args:
+            files: A dictionary mapping a unique ID to the file input (Path or bytes).
+            force: If True, re-computes and updates embeddings even if they already exist.
+                   Defaults to False.
+            batch_size: The number of items to process in a single inference batch.
+                        Defaults to 32.
+            payload: A dictionary mapping the file ID to a payload dictionary to be stored
+                     alongside the vector.
         """
 
         if self.logger:
@@ -211,8 +221,6 @@ class VisualSearchEngine:
                 if self.preprocess_cb
                 else self.load_to_buffer(data)
             )
-            if buffer is None:
-                self.logger.warning(f"add_file: Failed load {id}")
 
             if buffer is not None:
                 current_batch_buffers[str(id)] = buffer
