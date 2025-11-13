@@ -72,6 +72,11 @@ class VisualSearchEngine:
                     self.logger.warning(f"Skipping {id}, embedding already exists.")
                 return True
 
+        if payload is None:
+            if self.logger:
+                self.logger.info(f"Skipping {id}, Payload is missing")
+            return False
+
         buffer = (
             self.preprocess_cb(data)
             if self.preprocess_cb
@@ -97,6 +102,16 @@ class VisualSearchEngine:
     def _discover_and_filter_files(
         self, files: Dict[int, FileInput], force: bool
     ) -> Dict[int, FileInput]:
+        """
+        Discovers and filters files that need to be processed.
+
+        Args:
+            files: A dictionary of files to process.
+            force: If True, re-processes all files even if they already exist.
+
+        Returns:
+            A dictionary of files that need to be processed.
+        """
 
         if force:
             return files
@@ -136,12 +151,18 @@ class VisualSearchEngine:
         for id_str, vec_f32 in batch_results.items():
             if vec_f32 is not None:
                 id = int(id_str)
-                self.store.add_vector(
-                    id,
-                    vec_f32,
-                    payload=payload.get(id, None) if payload else None,
-                )
-                successful_embeddings += 1
+                curr_payload = payload.get(id, None) if payload else None
+                if curr_payload is None:
+                    if self.logger:
+                        self.logger.info(f"Skipping {id}, Payload is missing")
+                    return False
+                else:
+                    self.store.add_vector(
+                        id,
+                        vec_f32,
+                        payload=curr_payload,
+                    )
+                    successful_embeddings += 1
 
         return successful_embeddings
 
@@ -253,12 +274,27 @@ class VisualSearchEngine:
 
     # ---------------------------------------------------------------------
     def delete_file(self, id: int):
+        """
+        Deletes the embedding for a single file.
+
+        Args:
+            id: The unique identifier for the file.
+        """
         self.store.delete_vector(id)
         if self.logger:
             self.logger.debug(f"Deleted embedding for {id}")
 
     # ---------------------------------------------------------------------
     def get_embedding(self, image_path: Path) -> Optional[np.ndarray]:
+        """
+        Computes the embedding for a single image file.
+
+        Args:
+            image_path: The absolute path to the image file.
+
+        Returns:
+            A numpy array representing the embedding, or None if it cannot be computed.
+        """
         buffer = (
             self.preprocess_cb(image_path)
             if self.preprocess_cb
@@ -270,7 +306,17 @@ class VisualSearchEngine:
         return self.inference.infer(buffer, "Unknown")
 
     # ---------------------------------------------------------------------
-    def search(self, data: FileInput, limit: int = 5) -> List[dict]:
+    def search(self, data: FileInput, limit: int = 5) -> Optional[List[dict]]:
+        """
+        Searches for similar images in the store.
+
+        Args:
+            data: The image data to search for.
+            limit: The maximum number of results to return.
+
+        Returns:
+            A list of search results, or None if an error occurs.
+        """
         query_id = None
         buffer = (
             self.preprocess_cb(data)
@@ -278,6 +324,8 @@ class VisualSearchEngine:
             else self.load_to_buffer(data)
         )
         query_vec = self.inference.infer(buffer, "Unknown")
+        if query_vec is None:
+            return None
 
         search_results = self.store.search(
             query_vec, limit=limit + 1 if query_id else limit

@@ -84,11 +84,14 @@ class SimilaritySearch:
                 if logger:
                     logger.warning(f"{data} is not a valid file.")
                 return None
-            with Image.open(data) as img:
-                img = img.convert("RGB").resize(
-                    self.hailo_inference_engine.input_size, Image.LANCZOS
-                )
-                return np.array(img, dtype=np.uint8)
+            try:
+                with Image.open(data) as img:
+                    img = img.convert("RGB").resize(
+                        self.hailo_inference_engine.input_size, Image.LANCZOS
+                    )
+                    return np.array(img, dtype=np.uint8)
+            except Exception as e:
+                return None
         else:
             return np.array(data, dtype=np.uint8)
 
@@ -192,7 +195,7 @@ class SimilaritySearch:
         search_results = self.engine.search(
             query, limit=limit + 1 if query_id else limit
         )
-
+        print(search_results)
         results = []
         for r in search_results:
             if r.get("filename"):
@@ -201,10 +204,11 @@ class SimilaritySearch:
                     continue
                 results.append({**r, "filename": self.base_folder / r["filename"]})
             else:
-                raise Exception("Failed to get payload when searching")
+                # raise Exception("Failed to get payload when searching")
+                pass
 
-        if self.logger:
-            self.logger.debug(f"Found {len(results)} results for query.")
+        if logger:
+            logger.debug(f"Found {len(results)} results for query.")
         return results[:limit]
 
     # ---------------------------------------------------------------------
